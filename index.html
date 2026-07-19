@@ -356,6 +356,10 @@
       <label class="specimen-tag">語境句中文翻譯</label>
       <textarea id="modalSentenceZh" rows="3" class="auto-grow-textarea w-full bg-surface2 border border-hair rounded-lg p-2 text-sm mt-1 resize-none overflow-hidden"></textarea>
     </div>
+    <div id="relatedPhrasesSection" class="hidden">
+      <label class="specimen-tag">相關片語（點了直接查詢建卡）</label>
+      <div id="relatedPhrasesList" class="flex flex-wrap gap-2 mt-2"></div>
+    </div>
     <button id="modalSaveBtn" class="btn-primary w-full py-3 rounded-lg">儲存字卡</button>
   </div>
 </div>
@@ -943,6 +947,38 @@ function describeLookupSource(result) {
   return result.enDefinition ? `${label}（英文釋義：${result.enDefinition}）` : label;
 }
 
+// 從 ECDICT 找「這個單字開頭」的片語（例如 make -> make sure / make friends）
+function findRelatedPhrases(word, limit) {
+  if (word.includes(' ')) return []; // 本身已經是片語就不用再找，避免沒意義的結果
+  const prefix = `${word} `;
+  return Object.keys(ECDICT)
+    .filter((k) => k.startsWith(prefix))
+    .slice(0, limit || 6)
+    .map((k) => ({ phrase: k, zhDefinition: ECDICT[k].t || '' }));
+}
+
+function renderRelatedPhrases(word, sentence) {
+  const section = document.getElementById('relatedPhrasesSection');
+  const list = document.getElementById('relatedPhrasesList');
+  const phrases = findRelatedPhrases(word);
+  list.innerHTML = '';
+
+  if (!phrases.length) {
+    section.classList.add('hidden');
+    return;
+  }
+
+  section.classList.remove('hidden');
+  phrases.forEach(({ phrase, zhDefinition }) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'btn-quiet text-xs px-3 py-1.5 rounded-lg';
+    btn.textContent = zhDefinition ? `${phrase}（${zhDefinition.split(/[,，\\n]/)[0]}）` : phrase;
+    btn.addEventListener('click', () => openLookupModal(phrase, sentence || ''));
+    list.appendChild(btn);
+  });
+}
+
 async function openLookupModal(word, sentence) {
   document.getElementById('lookupModal').classList.remove('hidden');
   document.getElementById('modalWord').value = word;
@@ -953,6 +989,7 @@ async function openLookupModal(word, sentence) {
   document.getElementById('modalStatus').textContent = '查詢中…';
   modalContext.enDefinition = '';
   modalContext.tags = '';
+  renderRelatedPhrases(word.toLowerCase(), sentence);
 
   const existing = CARDS.find((c) => c.word === word.toLowerCase() && c.status === 'active');
   modalContext.existingId = existing ? existing.id : null;
