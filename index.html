@@ -1528,6 +1528,14 @@ document.getElementById('manageBackBtn').addEventListener('click', () => switchP
    初始化
    ========================================================= */
 
+// v3.2：接收 YouTube 頁面上「傳送整份逐字稿」用 postMessage 送來的完整文字
+// （不用網址參數，因為完整逐字稿常常太長，超過瀏覽器網址長度上限）
+window.addEventListener('message', (e) => {
+  if (!e.data || e.data.type !== 'ENG_IMMERSION_BULK_TEXT' || !e.data.text) return;
+  renderQuickAdd(e.data.text);
+  switchPage('quickadd');
+});
+
 async function init() {
   loadEcdict(); // 非阻塞載入，查詢時才需要，不擋畫面顯示
   parseUrlText();
@@ -1540,6 +1548,12 @@ async function init() {
   if (pendingQuickAddText) {
     renderQuickAdd(pendingQuickAddText);
     switchPage('quickadd');
+  }
+
+  // 若這個分頁是被 YouTube 那邊的腳本用 window.open 開啟的，回報「準備好了」
+  // 讓對方立刻用 postMessage 送逐字稿過來，不用一直盲目重試
+  if (window.opener) {
+    try { window.opener.postMessage({ type: 'ENG_IMMERSION_READY' }, '*'); } catch (e) { /* 忽略 */ }
   }
 
   if ('serviceWorker' in navigator) {

@@ -1,5 +1,5 @@
 // Service Worker：cache-first 離線快取策略
-const CACHE_NAME = 'eng-immersion-v5';
+const CACHE_NAME = 'eng-immersion-v6';
 const CORE_ASSETS = [
   './',
   './index.html',
