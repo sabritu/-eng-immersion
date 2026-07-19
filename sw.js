@@ -1,12 +1,12 @@
 // Service Worker：cache-first 離線快取策略
-const CACHE_NAME = 'eng-immersion-v3';
+const CACHE_NAME = 'eng-immersion-v4';
 const CORE_ASSETS = [
   './',
   './index.html',
   './manifest.json',
-  './icons/icon-192.png',
-  './icons/icon-512.png',
-  './dict/ecdict.json'
+  './icon-192.png',
+  './icon-512.png',
+  './ecdict.json'
 ];
 
 // 安裝階段：預先快取核心檔案

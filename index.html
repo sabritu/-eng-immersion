@@ -6,8 +6,8 @@
 <title>語境沉浸式英文習得</title>
 <meta name="theme-color" content="#14120f">
 <link rel="manifest" href="./manifest.json">
-<link rel="icon" href="./icons/icon-192.png">
-<link rel="apple-touch-icon" href="./icons/icon-192.png">
+<link rel="icon" href="./icon-192.png">
+<link rel="apple-touch-icon" href="./icon-192.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <script src="https://cdn.tailwindcss.com"></script>
@@ -823,12 +823,12 @@ document.addEventListener('mouseup', () => {
    ========================================================= */
 
 // ECDICT 離線辭典：{ 單字: { w, p(音標), t(中文釋義), tag(考試標籤) } }
-// 由 dict/ecdict.json 載入，查無網路也能即時查到中文
+// 由 ecdict.json 載入，查無網路也能即時查到中文
 let ECDICT = {};
 
 async function loadEcdict() {
   try {
-    const res = await fetch('./dict/ecdict.json');
+    const res = await fetch('./ecdict.json');
     if (res.ok) ECDICT = await res.json();
   } catch (e) {
     console.error('ECDICT 載入失敗，將僅使用線上翻譯', e);
@@ -1262,7 +1262,7 @@ function checkDueOnVisible() {
 
   new Notification('記憶即將遺忘', {
     body: `今日有 ${due.length} 張字卡待複習`,
-    icon: './icons/icon-192.png'
+    icon: './icon-192.png'
   });
   settings.lastNotifiedDate = todayISO();
   saveSettings(settings);
