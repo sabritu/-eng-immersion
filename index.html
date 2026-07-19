@@ -767,51 +767,24 @@ function onWordClick(span, sentence, sentenceBlock, isShiftClick) {
   openLookupModal(span.textContent.toLowerCase(), sentence.trim());
 }
 
-// 拖曳反白選取連續文字時，跳出「查詢此片語」浮動按鈕
-let phrasePopupEl = null;
-
-function ensurePhrasePopup() {
-  if (phrasePopupEl) return phrasePopupEl;
-  phrasePopupEl = document.createElement('button');
-  phrasePopupEl.id = 'phrasePopupBtn';
-  phrasePopupEl.className = 'hidden fixed z-40 btn-primary text-xs px-3 py-1.5 rounded-lg shadow-lg';
-  phrasePopupEl.textContent = '查詢此片語';
-  document.body.appendChild(phrasePopupEl);
-  return phrasePopupEl;
-}
-
+// 拖曳反白選取連續文字：放開滑鼠就直接查詢，不用再找按鈕點第二下
+// （跟平常網頁選字複製動作一樣，唯一差別是放開後直接查詢建卡）
 document.addEventListener('mouseup', () => {
-  const popup = ensurePhrasePopup();
   const selection = window.getSelection();
   const text = selection ? selection.toString().trim() : '';
-
-  if (!text || !text.includes(' ') || selection.rangeCount === 0) {
-    popup.classList.add('hidden');
-    return;
-  }
+  if (!text || !text.includes(' ') || selection.rangeCount === 0) return;
 
   const anchorNode = selection.anchorNode;
   const sentenceBlock = anchorNode && anchorNode.nodeType === 3
     ? anchorNode.parentElement.closest('.sentence-block')
     : anchorNode && anchorNode.closest && anchorNode.closest('.sentence-block');
-  if (!sentenceBlock) {
-    popup.classList.add('hidden');
-    return;
+  if (!sentenceBlock) return;
+
+  if (ytPlayer && typeof ytPlayer.pauseVideo === 'function') {
+    ytPlayer.pauseVideo();
   }
-
-  const rect = selection.getRangeAt(0).getBoundingClientRect();
-  popup.style.left = `${Math.max(8, rect.left)}px`;
-  popup.style.top = `${Math.max(8, rect.top - 40)}px`;
-  popup.classList.remove('hidden');
-
-  popup.onclick = () => {
-    if (ytPlayer && typeof ytPlayer.pauseVideo === 'function') {
-      ytPlayer.pauseVideo();
-    }
-    openLookupModal(text.toLowerCase(), (sentenceBlock.dataset.sentence || text).trim());
-    popup.classList.add('hidden');
-    selection.removeAllRanges();
-  };
+  openLookupModal(text.toLowerCase(), (sentenceBlock.dataset.sentence || text).trim());
+  selection.removeAllRanges();
 });
 
 /* =========================================================
