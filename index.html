@@ -6,8 +6,8 @@
 <title>語境沉浸式英文習得</title>
 <meta name="theme-color" content="#14120f">
 <link rel="manifest" href="./manifest.json">
-<link rel="icon" href="./icons/icon-192.png">
-<link rel="apple-touch-icon" href="./icons/icon-192.png">
+<link rel="icon" href="./icon-192.png">
+<link rel="apple-touch-icon" href="./icon-192.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <script src="https://cdn.tailwindcss.com"></script>
@@ -496,9 +496,11 @@ function isSuggestedWord(word) {
 }
 
 // 快速建卡畫面：以句為單位分列顯示，生字加底線標記，點擊即查詢建卡（整句自動當語境）
+// v3.1：跟 YouTube 分頁共用 buildSentenceBlock，一樣支援 Shift 連點／拖曳反白選片語
 function renderQuickAdd(text) {
   const container = document.getElementById('quickaddList');
   container.innerHTML = '';
+  lastClickedToken = null;
   const sentences = splitSentences(text);
 
   if (!sentences.length) {
@@ -511,19 +513,7 @@ function renderQuickAdd(text) {
     block.className = 'specimen-card p-3';
     const p = document.createElement('p');
     p.className = 'leading-7 text-paper';
-
-    const tokens = sentence.split(/(\s+)/);
-    tokens.forEach((token) => {
-      if (/^[A-Za-z]+(?:'[A-Za-z]+)?$/.test(token)) {
-        const span = document.createElement('span');
-        span.className = isSuggestedWord(token) ? 'word-token quickadd-suggested' : 'word-token';
-        span.textContent = token;
-        span.addEventListener('click', () => openLookupModal(token.toLowerCase(), sentence.trim()));
-        p.appendChild(span);
-      } else {
-        p.appendChild(document.createTextNode(token));
-      }
-    });
+    p.appendChild(buildSentenceBlock(sentence, true));
     block.appendChild(p);
     container.appendChild(block);
   });
@@ -713,37 +703,43 @@ function analyzeTranscript(text) {
   }
 }
 
-// 將逐字稿渲染為可點擊的單字，點擊時暫停影片並帶出語境句
-// v3：支援 Shift 連點與拖曳反白選取片語（每句包成一個 sentence-block，方便判斷選取範圍是否跨句）
+// 將句子建成可點擊的字詞區塊，支援 Shift 連點與拖曳反白選取片語
+// （YouTube 分頁的逐字稿、快速建卡畫面共用這個函式，行為才會一致）
+// v3：每句包成一個 sentence-block，方便判斷選取範圍是否跨句
 let lastClickedToken = null;
 
+function buildSentenceBlock(sentence, highlightSuggested) {
+  const sentenceBlock = document.createElement('span');
+  sentenceBlock.className = 'sentence-block';
+  sentenceBlock.dataset.sentence = sentence;
+
+  const tokens = sentence.split(/(\s+)/);
+  let tokenIndex = 0;
+  tokens.forEach((token) => {
+    if (/^[A-Za-z]+(?:'[A-Za-z]+)?$/.test(token)) {
+      const span = document.createElement('span');
+      const suggested = highlightSuggested && isSuggestedWord(token);
+      span.className = suggested ? 'word-token quickadd-suggested' : 'word-token';
+      span.textContent = token;
+      span.dataset.tokenIndex = tokenIndex++;
+      span.addEventListener('click', (e) => onWordClick(span, sentence, sentenceBlock, e.shiftKey));
+      sentenceBlock.appendChild(span);
+    } else {
+      sentenceBlock.appendChild(document.createTextNode(token));
+    }
+  });
+  return sentenceBlock;
+}
+
+// 將逐字稿渲染為可點擊的單字，點擊時暫停影片並帶出語境句
 function renderClickableTranscript(text) {
   const container = document.getElementById('transcriptRender');
   container.innerHTML = '';
   lastClickedToken = null;
   if (!text.trim()) return;
 
-  const sentences = splitSentences(text);
-  sentences.forEach((sentence) => {
-    const sentenceBlock = document.createElement('span');
-    sentenceBlock.className = 'sentence-block';
-    sentenceBlock.dataset.sentence = sentence;
-
-    const tokens = sentence.split(/(\s+)/);
-    let tokenIndex = 0;
-    tokens.forEach((token) => {
-      if (/^[A-Za-z]+(?:'[A-Za-z]+)?$/.test(token)) {
-        const span = document.createElement('span');
-        span.className = 'word-token';
-        span.textContent = token;
-        span.dataset.tokenIndex = tokenIndex++;
-        span.addEventListener('click', (e) => onWordClick(span, sentence, sentenceBlock, e.shiftKey));
-        sentenceBlock.appendChild(span);
-      } else {
-        sentenceBlock.appendChild(document.createTextNode(token));
-      }
-    });
-    container.appendChild(sentenceBlock);
+  splitSentences(text).forEach((sentence) => {
+    container.appendChild(buildSentenceBlock(sentence, false));
     container.appendChild(document.createTextNode(' '));
   });
 }
@@ -823,12 +819,12 @@ document.addEventListener('mouseup', () => {
    ========================================================= */
 
 // ECDICT 離線辭典：{ 單字: { w, p(音標), t(中文釋義), tag(考試標籤) } }
-// 由 dict/ecdict.json 載入，查無網路也能即時查到中文
+// 由 ecdict.json 載入，查無網路也能即時查到中文
 let ECDICT = {};
 
 async function loadEcdict() {
   try {
-    const res = await fetch('./dict/ecdict.json');
+    const res = await fetch('./ecdict.json');
     if (res.ok) ECDICT = await res.json();
   } catch (e) {
     console.error('ECDICT 載入失敗，將僅使用線上翻譯', e);
@@ -1262,7 +1258,7 @@ function checkDueOnVisible() {
 
   new Notification('記憶即將遺忘', {
     body: `今日有 ${due.length} 張字卡待複習`,
-    icon: './icons/icon-192.png'
+    icon: './icon-192.png'
   });
   settings.lastNotifiedDate = todayISO();
   saveSettings(settings);
