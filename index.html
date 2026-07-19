@@ -164,15 +164,12 @@
   <section id="page-collect" class="page space-y-4 hidden">
     <div>
       <h2 class="text-lg font-serif text-paper">文字採集</h2>
-      <p class="text-xs text-muted mt-1">貼上句子後會自動拆解單字，加入待處理字卡庫。也可透過手機分享或 iOS 捷徑帶入。</p>
+      <p class="text-xs text-muted mt-1">貼上句子後點生字查詢建卡，也能 Shift 連點／拖曳選字組成片語。也可透過手機分享或 iOS 捷徑帶入。</p>
     </div>
     <textarea id="collectInput" rows="4" placeholder="貼上英文句子…" class="w-full bg-surface border border-hair rounded-lg p-3 text-sm outline-none focus:ring-1 focus:ring-amber resize-none placeholder:text-muted"></textarea>
-    <button id="collectBtn" class="btn-primary w-full py-3 rounded-lg">拆解並加入待處理</button>
+    <button id="collectBtn" class="btn-primary w-full py-3 rounded-lg">顯示可點字內容</button>
 
-    <div>
-      <h3 class="specimen-tag mb-3">待處理清單（<span id="inboxListCount">0</span>）</h3>
-      <div id="inboxList" class="space-y-2"></div>
-    </div>
+    <div id="inboxList" class="space-y-3"></div>
   </section>
 
 
@@ -482,16 +479,17 @@ function isSuggestedWord(word) {
   return !CARDS.some((c) => c.word === key);
 }
 
-// 快速建卡畫面：以句為單位分列顯示，生字加底線標記，點擊即查詢建卡（整句自動當語境）
-// v3.1：跟 YouTube 分頁共用 buildSentenceBlock，一樣支援 Shift 連點／拖曳反白選片語
-function renderQuickAdd(text) {
-  const container = document.getElementById('quickaddList');
+// 把一段文字渲染成可點字／可選片語的句子列表
+// 「快速建卡」畫面（分享/捷徑帶入文字）跟「文字採集」分頁（手動貼上）共用同一套邏輯，
+// 只是渲染到不同的容器，這樣不管文字從哪裡進來，選字/選片語的體驗都一致
+function renderClickableText(text, containerId) {
+  const container = document.getElementById(containerId);
   container.innerHTML = '';
   lastClickedToken = null;
   const sentences = splitSentences(text);
 
   if (!sentences.length) {
-    container.innerHTML = '<p class="text-center text-muted text-sm py-8">沒有收到文字內容</p>';
+    container.innerHTML = '<p class="text-center text-muted text-sm py-8">貼上文字後會顯示在這裡</p>';
     return;
   }
 
@@ -506,29 +504,11 @@ function renderQuickAdd(text) {
   });
 }
 
-document.getElementById('quickaddBackBtn').addEventListener('click', () => switchPage('home'));
-
-// 將一段文字拆解為單字，逐一以「待處理」狀態加入字卡庫（已存在的單字不重複加入）
-// 同一次呼叫共用一個 batchId，方便之後在「字卡管理」頁一次刪掉整批
-function splitToInboxCards(text, sourceLabel) {
-  const batchId = generateBatchId();
-  const source = `${sourceLabel || '文字採集'}．${formatBatchTimestamp()}`;
-  const sentences = splitSentences(text);
-  const existingWords = new Set(CARDS.map((c) => c.word));
-  const seenInThisBatch = new Set();
-
-  sentences.forEach((sentence) => {
-    const words = sentence.match(/[A-Za-z]+(?:'[A-Za-z]+)?/g) || [];
-    words.forEach((w) => {
-      const key = w.toLowerCase();
-      if (existingWords.has(key) || seenInThisBatch.has(key)) return;
-      seenInThisBatch.add(key);
-      CARDS.push(makeInboxCard(key, sentence.trim(), batchId, source));
-    });
-  });
-  persist();
-  renderInboxList();
+function renderQuickAdd(text) {
+  renderClickableText(text, 'quickaddList');
 }
+
+document.getElementById('quickaddBackBtn').addEventListener('click', () => switchPage('home'));
 
 // 簡易斷句：依 . ! ? 斷開，並保留原文
 function splitSentences(text) {
@@ -560,39 +540,18 @@ function makeInboxCard(word, sentence, batchId, source) {
   };
 }
 
+// 貼上文字直接渲染成可點字／可選片語的內容（跟快速建卡同一套邏輯），不再自動塞進待處理清單
 document.getElementById('collectBtn').addEventListener('click', () => {
   const text = document.getElementById('collectInput').value;
   if (!text.trim()) return;
-  splitToInboxCards(text, '手動貼上採集');
-  document.getElementById('collectInput').value = '';
+  renderClickableText(text, 'inboxList');
 });
 
+// 更新首頁「待處理」統計（僅供舊資料相容：新流程不再新增 inbox 狀態的字卡，
+// 舊的待處理字卡可以在「字卡管理」頁篩選狀態找到並處理）
 function renderInboxList() {
   const list = CARDS.filter((c) => c.status === 'inbox');
-  document.getElementById('inboxListCount').textContent = list.length;
   document.getElementById('inboxCount').textContent = list.length;
-  const container = document.getElementById('inboxList');
-  container.innerHTML = '';
-  list.slice(0, 100).forEach((card) => {
-    const row = document.createElement('div');
-    row.className = 'bg-surface rounded-lg p-3 flex items-center justify-between gap-2';
-    row.innerHTML = `
-      <div class="min-w-0">
-        <p class="font-bold truncate">${escapeHtml(card.word)}</p>
-        <p class="text-xs text-muted truncate">${escapeHtml(card.sentence)}</p>
-      </div>
-      <div class="flex gap-1 shrink-0">
-        <button class="lookup-btn text-xs btn-primary px-3 py-1.5 rounded-lg">查詢</button>
-        <button class="discard-btn text-xs bg-surface2 hover:bg-surface2/70 px-2 py-1.5 rounded-lg">✕</button>
-      </div>`;
-    row.querySelector('.lookup-btn').addEventListener('click', () => openLookupModal(card.word, card.sentence));
-    row.querySelector('.discard-btn').addEventListener('click', () => {
-      CARDS = CARDS.filter((c) => c.id !== card.id);
-      persist();
-      renderInboxList();
-    });
-    container.appendChild(row);
-  });
 }
 
 function escapeHtml(str) {
