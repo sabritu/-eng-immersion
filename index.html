@@ -1,0 +1,1584 @@
+<!DOCTYPE html>
+<html lang="zh-Hant" class="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>語境沉浸式英文習得</title>
+<meta name="theme-color" content="#14120f">
+<link rel="manifest" href="./manifest.json">
+<link rel="icon" href="./icons/icon-192.png">
+<link rel="apple-touch-icon" href="./icons/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    darkMode: 'class',
+    theme: {
+      extend: {
+        colors: {
+          ink: '#14120f',
+          surface: '#1c1a16',
+          surface2: '#26231d',
+          hair: '#3a352c',
+          amber: '#d9a253',
+          amber2: '#c98f3d',
+          sage: '#8ca083',
+          paper: '#ece6da',
+          muted: '#948b7a'
+        },
+        fontFamily: {
+          serif: ['Georgia', '"Iowan Old Style"', '"Palatino Linotype"', '"Times New Roman"', 'serif'],
+          mono: ['ui-monospace', '"SF Mono"', '"Cascadia Code"', '"Roboto Mono"', 'Consolas', 'monospace']
+        }
+      }
+    }
+  }
+</script>
+<style>
+  body { -webkit-tap-highlight-color: transparent; }
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-thumb { background: #3a352c; border-radius: 3px; }
+
+  /* 標本卡：頂端一道虛線,像從本子上撕下來的痕跡 */
+  .specimen-card {
+    position: relative;
+    background: #1c1a16;
+    border: 1px solid #3a352c;
+    border-radius: 4px;
+  }
+  .specimen-card::before {
+    content: '';
+    position: absolute;
+    top: -1px; left: 12px; right: 12px;
+    border-top: 2px dashed #3a352c;
+  }
+  .specimen-tag {
+    font-family: ui-monospace, 'SF Mono', Consolas, monospace;
+    font-size: 10px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: #948b7a;
+  }
+
+  .word-token { cursor: pointer; transition: background-color .15s; border-radius: 3px; padding: 1px 3px; }
+  .word-token:hover { background-color: rgba(217,162,83,.22); }
+  .word-token.word-known { color: #8ca083; }
+  .quickadd-suggested { text-decoration: underline dashed; text-decoration-color: #d9a253; font-weight: 600; }
+
+  .cloze-blank { border-bottom: 2px solid #d9a253; padding: 0 6px; color: #d9a253; font-weight: 600; font-family: ui-monospace, 'SF Mono', Consolas, monospace; }
+
+  .tab-btn { color: #948b7a; }
+  .tab-btn.active { color: #d9a253; }
+  .tab-btn svg { stroke: currentColor; }
+
+  /* 複習卡翻牌動畫：答案區塊以翻牌動作進場 */
+  .flip-card { perspective: 800px; }
+  .flip-face.flip-back {
+    transform-origin: top center;
+    animation: flip-reveal .45s cubic-bezier(.3,.1,.2,1);
+  }
+  @keyframes flip-reveal {
+    from { transform: rotateX(-90deg); opacity: 0; }
+    to { transform: rotateX(0deg); opacity: 1; }
+  }
+
+  .btn-primary {
+    background: #d9a253; color: #14120f; font-weight: 700;
+    transition: background-color .15s, transform .1s;
+  }
+  .btn-primary:hover { background: #c98f3d; }
+  .btn-primary:active { transform: scale(.98); }
+
+  .btn-quiet {
+    background: #26231d; color: #ece6da;
+    transition: background-color .15s;
+  }
+  .btn-quiet:hover { background: #302c24; }
+
+  ::selection { background: rgba(217,162,83,.35); }
+</style>
+</head>
+<body class="bg-ink text-paper min-h-screen pb-20 font-sans">
+
+<!-- ============ 頂部標題列 ============ -->
+<header class="sticky top-0 z-20 bg-ink/95 backdrop-blur border-b border-hair px-4 py-3 flex items-center justify-between">
+  <h1 class="text-base font-serif tracking-wide text-paper">語境採集本</h1>
+  <span id="dueBadgeTop" class="hidden text-xs font-mono bg-amber text-ink rounded-full px-2 py-0.5 font-bold"></span>
+</header>
+
+<main class="max-w-3xl mx-auto px-4 py-5">
+
+  <!-- ============ 分頁一：首頁儀表板 ============ -->
+  <section id="page-home" class="page space-y-4">
+    <div class="specimen-card p-5">
+      <div class="flex justify-between items-start">
+        <p class="specimen-tag">今日待複習</p>
+        <span id="dueDot" class="hidden w-2 h-2 rounded-full bg-amber mt-1"></span>
+      </div>
+      <div class="flex items-end gap-2 mt-2">
+        <span id="dueCount" class="text-6xl font-serif text-amber leading-none">0</span>
+        <span class="text-muted mb-1.5 text-sm">張字卡</span>
+      </div>
+      <button id="goReviewBtn" class="btn-primary mt-5 w-full py-3 rounded-lg">開始複習</button>
+    </div>
+
+    <div class="grid grid-cols-2 gap-3">
+      <div class="specimen-card p-4">
+        <p class="specimen-tag mb-2">待處理</p>
+        <p id="inboxCount" class="text-3xl font-serif text-paper">0</p>
+      </div>
+      <div class="specimen-card p-4">
+        <p class="specimen-tag mb-2">累計字卡</p>
+        <p id="totalCount" class="text-3xl font-serif text-paper">0</p>
+      </div>
+    </div>
+
+    <button id="goManageBtn" class="specimen-card w-full p-4 flex items-center justify-between text-left">
+      <span class="flex items-center gap-2">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 10h16M9 4v16"/></svg>
+        <span class="text-sm text-paper font-bold">字卡管理</span>
+        <span class="text-xs text-muted">篩選、批次刪除</span>
+      </span>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg>
+    </button>
+
+    <div class="specimen-card p-4">
+      <p class="specimen-tag mb-3">複習提醒通知</p>
+      <button id="requestNotifyBtn" class="btn-quiet text-sm px-3 py-2.5 rounded-lg w-full flex items-center justify-center gap-2">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+        開啟到期提醒通知
+      </button>
+      <p id="notifyStatus" class="text-xs text-muted mt-2"></p>
+    </div>
+
+    <div class="specimen-card p-4">
+      <p class="specimen-tag mb-3">複習語音</p>
+      <select id="voiceSelect" class="w-full bg-surface2 border border-hair rounded-lg p-2 text-sm mb-2"></select>
+      <button id="voicePreviewBtn" class="btn-quiet text-sm px-3 py-2 rounded-lg w-full">試聽這個語音</button>
+      <p class="text-xs text-muted mt-2">內建語音品質因裝置而異，程式會自動優先挑選聽起來較自然的版本，你也可以自己選一個念起來最順耳的。</p>
+    </div>
+  </section>
+
+  <!-- ============ 分頁二：文字採集 ============ -->
+  <section id="page-collect" class="page space-y-4 hidden">
+    <div>
+      <h2 class="text-lg font-serif text-paper">文字採集</h2>
+      <p class="text-xs text-muted mt-1">貼上句子後會自動拆解單字，加入待處理字卡庫。也可透過手機分享或 iOS 捷徑帶入。</p>
+    </div>
+    <textarea id="collectInput" rows="4" placeholder="貼上英文句子…" class="w-full bg-surface border border-hair rounded-lg p-3 text-sm outline-none focus:ring-1 focus:ring-amber resize-none placeholder:text-muted"></textarea>
+    <button id="collectBtn" class="btn-primary w-full py-3 rounded-lg">拆解並加入待處理</button>
+
+    <div>
+      <h3 class="specimen-tag mb-3">待處理清單（<span id="inboxListCount">0</span>）</h3>
+      <div id="inboxList" class="space-y-2"></div>
+    </div>
+  </section>
+
+  <!-- ============ 分頁三：YouTube 沉浸式播放 ============ -->
+  <section id="page-youtube" class="page space-y-4 hidden">
+    <h2 class="text-lg font-serif text-paper">YouTube 沉浸式播放</h2>
+    <input id="ytUrlInput" type="text" placeholder="貼上 YouTube 網址" class="w-full bg-surface border border-hair rounded-lg p-3 text-sm outline-none focus:ring-1 focus:ring-amber placeholder:text-muted">
+    <button id="ytLoadBtn" class="btn-quiet w-full py-2.5 rounded-lg text-sm">載入影片</button>
+    <div id="ytPlayer" class="w-full aspect-video bg-surface rounded-lg border border-hair"></div>
+
+    <textarea id="transcriptInput" rows="5" placeholder="貼上逐字稿…" class="w-full bg-surface border border-hair rounded-lg p-3 text-sm outline-none focus:ring-1 focus:ring-amber resize-none placeholder:text-muted"></textarea>
+    <button id="analyzeBtn" class="btn-primary w-full py-3 rounded-lg">分析逐字稿</button>
+    <p id="analyzeResult" class="text-sm font-mono"></p>
+
+    <div id="transcriptRender" class="specimen-card p-4 text-sm leading-7"></div>
+  </section>
+
+  <!-- ============ 分頁四：複習 ============ -->
+  <section id="page-review" class="page space-y-4 hidden">
+    <h2 class="text-lg font-serif text-paper">複習</h2>
+    <div id="reviewEmpty" class="text-center text-muted py-16">
+      <svg class="mx-auto mb-3 opacity-50" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+      <p>目前沒有待複習的字卡</p>
+    </div>
+    <div id="reviewCard" class="hidden specimen-card p-5 space-y-4">
+      <p class="specimen-tag">剩餘 <span id="reviewRemaining">0</span> 張</p>
+
+      <div class="flip-card">
+        <p id="clozeSentence" class="text-xl leading-9 font-serif text-paper break-words whitespace-normal"></p>
+        <button id="speakBtn" class="btn-quiet text-sm px-3 py-2 rounded-lg mt-4 flex items-center gap-2">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4V5Z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/></svg>
+          播放語音
+        </button>
+
+        <div id="revealArea" class="hidden flip-face flip-back space-y-3 mt-4">
+          <div class="bg-surface2 rounded-lg p-3 border border-hair">
+            <p class="font-serif text-xl text-amber" id="revealWord"></p>
+            <p class="text-sm text-muted font-mono" id="revealPhonetic"></p>
+            <p class="text-sm mt-1 text-paper" id="revealMeaning"></p>
+            <p class="text-xs text-muted mt-2 pt-2 border-t border-hair" id="revealSentenceZh"></p>
+          </div>
+          <p class="text-xs text-muted">這張卡片你記得多熟？</p>
+          <div class="grid grid-cols-5 gap-2">
+            <button data-score="1" class="score-btn bg-red-500/80 hover:bg-red-500 py-2 rounded-lg text-white flex flex-col items-center leading-tight">
+              <span class="text-sm font-bold">1</span><span class="text-[10px]">忘記了</span>
+            </button>
+            <button data-score="2" class="score-btn bg-orange-500/80 hover:bg-orange-500 py-2 rounded-lg text-white flex flex-col items-center leading-tight">
+              <span class="text-sm font-bold">2</span><span class="text-[10px]">很勉強</span>
+            </button>
+            <button data-score="3" class="score-btn bg-amber2/80 hover:bg-amber2 py-2 rounded-lg text-ink flex flex-col items-center leading-tight">
+              <span class="text-sm font-bold">3</span><span class="text-[10px]">想了一下</span>
+            </button>
+            <button data-score="4" class="score-btn bg-sage/70 hover:bg-sage py-2 rounded-lg text-ink flex flex-col items-center leading-tight">
+              <span class="text-sm font-bold">4</span><span class="text-[10px]">有點猶豫</span>
+            </button>
+            <button data-score="5" class="score-btn bg-amber hover:bg-amber2 py-2 rounded-lg text-ink flex flex-col items-center leading-tight">
+              <span class="text-sm font-bold">5</span><span class="text-[10px]">很熟悉</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <button id="showAnswerBtn" class="btn-primary w-full py-3 rounded-lg">顯示答案</button>
+    </div>
+  </section>
+
+  <!-- ============ 分頁五：資料同步 ============ -->
+  <section id="page-data" class="page space-y-4 hidden">
+    <h2 class="text-lg font-serif text-paper">資料同步</h2>
+    <div class="specimen-card p-4 space-y-3">
+      <p class="specimen-tag">匯出</p>
+      <div class="flex gap-2">
+        <button id="copyJsonBtn" class="btn-quiet flex-1 py-2.5 rounded-lg text-sm">複製到剪貼簿</button>
+        <button id="downloadJsonBtn" class="btn-quiet flex-1 py-2.5 rounded-lg text-sm">下載 .json</button>
+      </div>
+    </div>
+    <div class="specimen-card p-4 space-y-3">
+      <p class="specimen-tag">還原</p>
+      <textarea id="importInput" rows="4" placeholder="貼上匯出的 JSON…" class="w-full bg-surface2 border border-hair rounded-lg p-3 text-sm outline-none resize-none placeholder:text-muted"></textarea>
+      <div class="flex gap-2">
+        <button id="mergeBtn" class="btn-quiet flex-1 py-2.5 rounded-lg text-sm">合併</button>
+        <button id="overwriteBtn" class="flex-1 py-2.5 rounded-lg text-sm bg-red-500/80 hover:bg-red-500 text-white font-bold">完全覆蓋</button>
+      </div>
+      <p id="importResult" class="text-xs"></p>
+    </div>
+  </section>
+
+  <!-- ============ 分頁六：字卡管理（v3 新增，從首頁「累計字卡」進入） ============ -->
+  <section id="page-manage" class="page space-y-4 hidden">
+    <div class="flex items-center justify-between">
+      <h2 class="text-lg font-serif text-paper">字卡管理</h2>
+      <button id="manageBackBtn" class="text-xs text-muted hover:text-paper">← 返回首頁</button>
+    </div>
+
+    <div class="specimen-card p-4 space-y-3">
+      <div class="grid grid-cols-2 gap-2">
+        <select id="manageBatchFilter" class="w-full bg-surface2 border border-hair rounded-lg p-2 text-xs"></select>
+        <select id="manageStatusFilter" class="w-full bg-surface2 border border-hair rounded-lg p-2 text-xs">
+          <option value="">全部狀態</option>
+          <option value="active">已排入複習</option>
+          <option value="inbox">待處理</option>
+        </select>
+      </div>
+      <div class="grid grid-cols-2 gap-2">
+        <input id="manageDateFrom" type="date" class="w-full bg-surface2 border border-hair rounded-lg p-2 text-xs">
+        <input id="manageDateTo" type="date" class="w-full bg-surface2 border border-hair rounded-lg p-2 text-xs">
+      </div>
+    </div>
+
+    <div class="specimen-card p-3 flex items-center justify-between gap-2 text-sm">
+      <label class="flex items-center gap-2">
+        <input id="manageSelectAll" type="checkbox">
+        <span class="text-muted text-xs">全選（已選 <span id="manageSelectedCount">0</span>）</span>
+      </label>
+      <button id="manageDeleteSelectedBtn" class="text-xs bg-red-500/80 hover:bg-red-500 text-white font-bold px-3 py-1.5 rounded-lg">刪除已選</button>
+    </div>
+
+    <div class="specimen-card p-3 flex items-center gap-2">
+      <select id="manageBatchDeleteSelect" class="flex-1 bg-surface2 border border-hair rounded-lg p-2 text-xs"></select>
+      <button id="manageDeleteBatchBtn" class="text-xs bg-red-500/80 hover:bg-red-500 text-white font-bold px-3 py-1.5 rounded-lg whitespace-nowrap">刪除整批</button>
+    </div>
+
+    <div id="manageList" class="space-y-2"></div>
+  </section>
+
+  <!-- ============ 分頁七：快速建卡（v3 新增，由分享／捷徑帶入文字後自動進入） ============ -->
+  <section id="page-quickadd" class="page space-y-4 hidden">
+    <div class="flex items-center justify-between">
+      <h2 class="text-lg font-serif text-paper">快速建卡</h2>
+      <button id="quickaddBackBtn" class="text-xs text-muted hover:text-paper">← 返回首頁</button>
+    </div>
+    <p class="text-xs text-muted">已用底線標出可能不熟悉的生字，點擊查詢並建卡；整句會自動存為語境，不用自己貼。</p>
+    <div id="quickaddList" class="space-y-3"></div>
+  </section>
+
+</main>
+
+<!-- ============ 底部導覽列 ============ -->
+<nav class="fixed bottom-0 left-0 right-0 bg-surface border-t border-hair flex justify-around py-2 z-20">
+  <button data-page="home" class="tab-btn active flex flex-col items-center gap-1 text-xs px-2 py-1">
+    <span class="tab-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11 12 4l9 7"/><path d="M5 10v9h14v-9"/></svg></span>首頁
+  </button>
+  <button data-page="collect" class="tab-btn flex flex-col items-center gap-1 text-xs px-2 py-1">
+    <span class="tab-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></span>採集
+  </button>
+  <button data-page="youtube" class="tab-btn flex flex-col items-center gap-1 text-xs px-2 py-1">
+    <span class="tab-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="5.5" width="19" height="13" rx="3"/><path d="m10.5 9 5 3-5 3Z"/></svg></span>YouTube
+  </button>
+  <button data-page="review" class="tab-btn flex flex-col items-center gap-1 text-xs px-2 py-1">
+    <span class="tab-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg></span>複習
+  </button>
+  <button data-page="data" class="tab-btn flex flex-col items-center gap-1 text-xs px-2 py-1">
+    <span class="tab-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/><path d="M3 21v-5h5"/></svg></span>資料
+  </button>
+</nav>
+
+<!-- ============ 字卡查詢/儲存 Modal（共用：手動採集 + YouTube 點字皆用此） ============ -->
+<div id="lookupModal" class="hidden fixed inset-0 z-30 bg-black/70 flex items-end sm:items-center justify-center">
+  <div class="bg-surface border border-hair rounded-t-2xl sm:rounded-lg w-full sm:max-w-md p-5 space-y-3 max-h-[85vh] overflow-y-auto">
+    <div class="flex justify-between items-center">
+      <h3 class="font-serif text-lg text-amber">加入字卡</h3>
+      <button id="closeModalBtn" class="text-muted text-xl leading-none hover:text-paper">✕</button>
+    </div>
+    <p id="modalStatus" class="text-xs text-muted"></p>
+    <div>
+      <label class="specimen-tag">單字</label>
+      <input id="modalWord" type="text" class="w-full bg-surface2 border border-hair rounded-lg p-2 text-sm mt-1 font-serif">
+    </div>
+    <div>
+      <label class="specimen-tag">音標</label>
+      <input id="modalPhonetic" type="text" class="w-full bg-surface2 border border-hair rounded-lg p-2 text-sm mt-1 font-mono">
+    </div>
+    <div>
+      <label class="specimen-tag">中文翻譯</label>
+      <input id="modalMeaning" type="text" class="w-full bg-surface2 border border-hair rounded-lg p-2 text-sm mt-1">
+    </div>
+    <div>
+      <label class="specimen-tag">語境句</label>
+      <textarea id="modalSentence" rows="3" class="auto-grow-textarea w-full bg-surface2 border border-hair rounded-lg p-2 text-sm mt-1 resize-none overflow-hidden"></textarea>
+    </div>
+    <div>
+      <label class="specimen-tag">語境句中文翻譯</label>
+      <textarea id="modalSentenceZh" rows="3" class="auto-grow-textarea w-full bg-surface2 border border-hair rounded-lg p-2 text-sm mt-1 resize-none overflow-hidden"></textarea>
+    </div>
+    <button id="modalSaveBtn" class="btn-primary w-full py-3 rounded-lg">儲存字卡</button>
+  </div>
+</div>
+
+<div id="toast" class="hidden fixed bottom-20 left-1/2 -translate-x-1/2 bg-surface2 border border-hair text-sm px-4 py-2 rounded-full shadow-lg z-40 text-paper"></div>
+
+<script src="https://www.youtube.com/iframe_api"></script>
+<script>
+/* =========================================================
+   共用工具與資料層
+   ========================================================= */
+
+// 顯示底部短暫提示訊息
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.remove('hidden');
+  clearTimeout(el._timer);
+  el._timer = setTimeout(() => el.classList.add('hidden'), 2200);
+}
+
+// 舊卡補新欄位預設值，絕不覆蓋既有複習進度（v3：新增中文釋義與批次管理相關欄位）
+function migrateCard(card) {
+  if (card.zhDefinition === undefined) card.zhDefinition = card.meaning || '';
+  if (card.enDefinition === undefined) card.enDefinition = '';
+  if (card.tags === undefined) card.tags = '';
+  if (card.sentenceZh === undefined) card.sentenceZh = '';
+  if (card.batchId === undefined) card.batchId = 'legacy';
+  // 舊版 source 只是技術標記（pending/manual），不是給人看的來源描述，統一歸入歷史資料
+  if (!card.source || card.source === 'pending' || card.source === 'manual') card.source = '歷史資料';
+  return card;
+}
+
+function generateBatchId() {
+  return `batch-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+}
+
+function formatBatchTimestamp() {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+// LocalStorage 讀寫，全部 try-catch，資料損毀時不讓整個 App 白屏
+function loadCards() {
+  try {
+    const raw = localStorage.getItem('cards');
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.map(migrateCard) : [];
+  } catch (e) {
+    console.error('讀取字卡失敗，重置為空陣列', e);
+    toast('字卡資料讀取異常，已重置');
+    return [];
+  }
+}
+
+function saveCards(cards) {
+  try {
+    localStorage.setItem('cards', JSON.stringify(cards));
+    return true;
+  } catch (e) {
+    console.error('儲存字卡失敗', e);
+    toast('儲存失敗，請檢查儲存空間');
+    return false;
+  }
+}
+
+function loadSettings() {
+  try {
+    const raw = localStorage.getItem('settings');
+    return raw ? JSON.parse(raw) : {};
+  } catch (e) {
+    return {};
+  }
+}
+
+function saveSettings(settings) {
+  try {
+    localStorage.setItem('settings', JSON.stringify(settings));
+  } catch (e) {
+    console.error('儲存設定失敗', e);
+  }
+}
+
+let CARDS = loadCards();
+
+function persist() {
+  saveCards(CARDS);
+  renderDashboard();
+}
+
+function todayISO() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function addDays(days) {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+/* =========================================================
+   1. 文字採集入口
+   ========================================================= */
+
+// 從網址參數帶入文字（Android 分享 / iOS 捷徑 / 手動輸入共用同一邏輯）
+// v3：改為進「快速建卡」畫面逐句操作，不再自動把整段文字塞成一堆待處理字卡
+let pendingQuickAddText = '';
+
+function parseUrlText() {
+  const params = new URLSearchParams(window.location.search);
+  const text = params.get('text') || params.get('url') || '';
+  if (text) {
+    pendingQuickAddText = decodeURIComponent(text);
+    // 清掉網址參數，避免重新整理時重複匯入
+    history.replaceState(null, '', window.location.pathname);
+  }
+}
+
+// 常見虛詞不標記為生字，避免整句底線滿版
+const COMMON_STOPWORDS = new Set([
+  'a', 'an', 'the', 'is', 'are', 'was', 'were', 'am', 'be', 'been', 'being',
+  'to', 'of', 'in', 'on', 'at', 'for', 'and', 'or', 'but', 'with', 'as', 'by',
+  'it', 'this', 'that', 'these', 'those', 'he', 'she', 'they', 'we', 'you', 'i',
+  'my', 'your', 'his', 'her', 'their', 'our', 'not', 'no', 'do', 'does', 'did',
+  'have', 'has', 'had', 'will', 'would', 'can', 'could', 'should', 'shall',
+  'may', 'might', 'must', 'so', 'if', 'then', 'than', 'there', 'here', 'what',
+  'which', 'who', 'whom', 'when', 'where', 'why', 'how', 'all', 'each', 'every',
+  'some', 'any', 'more', 'most', 'other', 'such', 'only', 'own', 'same', 'just', 'also'
+]);
+
+// 生字判斷：已經是自己字卡庫裡的字，或常見虛詞，都不算需要標記查詢的生字
+function isSuggestedWord(word) {
+  const key = word.toLowerCase();
+  if (COMMON_STOPWORDS.has(key)) return false;
+  return !CARDS.some((c) => c.word === key);
+}
+
+// 快速建卡畫面：以句為單位分列顯示，生字加底線標記，點擊即查詢建卡（整句自動當語境）
+function renderQuickAdd(text) {
+  const container = document.getElementById('quickaddList');
+  container.innerHTML = '';
+  const sentences = splitSentences(text);
+
+  if (!sentences.length) {
+    container.innerHTML = '<p class="text-center text-muted text-sm py-8">沒有收到文字內容</p>';
+    return;
+  }
+
+  sentences.forEach((sentence) => {
+    const block = document.createElement('div');
+    block.className = 'specimen-card p-3';
+    const p = document.createElement('p');
+    p.className = 'leading-7 text-paper';
+
+    const tokens = sentence.split(/(\s+)/);
+    tokens.forEach((token) => {
+      if (/^[A-Za-z]+(?:'[A-Za-z]+)?$/.test(token)) {
+        const span = document.createElement('span');
+        span.className = isSuggestedWord(token) ? 'word-token quickadd-suggested' : 'word-token';
+        span.textContent = token;
+        span.addEventListener('click', () => openLookupModal(token.toLowerCase(), sentence.trim()));
+        p.appendChild(span);
+      } else {
+        p.appendChild(document.createTextNode(token));
+      }
+    });
+    block.appendChild(p);
+    container.appendChild(block);
+  });
+}
+
+document.getElementById('quickaddBackBtn').addEventListener('click', () => switchPage('home'));
+
+// 將一段文字拆解為單字，逐一以「待處理」狀態加入字卡庫（已存在的單字不重複加入）
+// 同一次呼叫共用一個 batchId，方便之後在「字卡管理」頁一次刪掉整批
+function splitToInboxCards(text, sourceLabel) {
+  const batchId = generateBatchId();
+  const source = `${sourceLabel || '文字採集'}．${formatBatchTimestamp()}`;
+  const sentences = splitSentences(text);
+  const existingWords = new Set(CARDS.map((c) => c.word));
+  const seenInThisBatch = new Set();
+
+  sentences.forEach((sentence) => {
+    const words = sentence.match(/[A-Za-z]+(?:'[A-Za-z]+)?/g) || [];
+    words.forEach((w) => {
+      const key = w.toLowerCase();
+      if (existingWords.has(key) || seenInThisBatch.has(key)) return;
+      seenInThisBatch.add(key);
+      CARDS.push(makeInboxCard(key, sentence.trim(), batchId, source));
+    });
+  });
+  persist();
+  renderInboxList();
+}
+
+// 簡易斷句：依 . ! ? 斷開，並保留原文
+function splitSentences(text) {
+  const trimmed = text.trim();
+  if (!trimmed) return [];
+  const parts = trimmed.split(/(?<=[.!?])\s+/).filter(Boolean);
+  return parts.length ? parts : [trimmed];
+}
+
+function makeInboxCard(word, sentence, batchId, source) {
+  return {
+    id: word,
+    word,
+    phonetic: '',
+    zhDefinition: '',
+    enDefinition: '',
+    tags: '',
+    sentence,
+    sentenceZh: '',
+    batchId: batchId || generateBatchId(),
+    source: source || `手動輸入．${formatBatchTimestamp()}`,
+    status: 'inbox',
+    ef: 2.5,
+    interval: 0,
+    reps: 0,
+    dueDate: todayISO(),
+    createdAt: new Date().toISOString(),
+    lastReviewed: null
+  };
+}
+
+document.getElementById('collectBtn').addEventListener('click', () => {
+  const text = document.getElementById('collectInput').value;
+  if (!text.trim()) return;
+  splitToInboxCards(text, '手動貼上採集');
+  document.getElementById('collectInput').value = '';
+});
+
+function renderInboxList() {
+  const list = CARDS.filter((c) => c.status === 'inbox');
+  document.getElementById('inboxListCount').textContent = list.length;
+  document.getElementById('inboxCount').textContent = list.length;
+  const container = document.getElementById('inboxList');
+  container.innerHTML = '';
+  list.slice(0, 100).forEach((card) => {
+    const row = document.createElement('div');
+    row.className = 'bg-surface rounded-lg p-3 flex items-center justify-between gap-2';
+    row.innerHTML = `
+      <div class="min-w-0">
+        <p class="font-bold truncate">${escapeHtml(card.word)}</p>
+        <p class="text-xs text-muted truncate">${escapeHtml(card.sentence)}</p>
+      </div>
+      <div class="flex gap-1 shrink-0">
+        <button class="lookup-btn text-xs btn-primary px-3 py-1.5 rounded-lg">查詢</button>
+        <button class="discard-btn text-xs bg-surface2 hover:bg-surface2/70 px-2 py-1.5 rounded-lg">✕</button>
+      </div>`;
+    row.querySelector('.lookup-btn').addEventListener('click', () => openLookupModal(card.word, card.sentence));
+    row.querySelector('.discard-btn').addEventListener('click', () => {
+      CARDS = CARDS.filter((c) => c.id !== card.id);
+      persist();
+      renderInboxList();
+    });
+    container.appendChild(row);
+  });
+}
+
+function escapeHtml(str) {
+  return String(str).replace(/[&<>"']/g, (m) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[m]));
+}
+
+// 語境句輸入框自動長高：不設固定行數上限，長句不會被截斷
+function autoGrowTextarea(el) {
+  el.style.height = 'auto';
+  el.style.height = `${el.scrollHeight}px`;
+}
+
+document.querySelectorAll('.auto-grow-textarea').forEach((el) => {
+  el.addEventListener('input', () => autoGrowTextarea(el));
+});
+
+/* =========================================================
+   2. YouTube 播放器與 i+1 過濾
+   ========================================================= */
+
+let ytPlayer = null;
+let ytReady = false;
+
+function onYouTubeIframeAPIReady() {
+  ytReady = true;
+}
+
+function parseYoutubeUrl(url) {
+  try {
+    const u = new URL(url);
+    if (u.hostname.includes('youtu.be')) {
+      return u.pathname.slice(1).split('/')[0];
+    }
+    if (u.pathname.includes('/shorts/')) {
+      return u.pathname.split('/shorts/')[1].split('/')[0];
+    }
+    if (u.searchParams.get('v')) {
+      return u.searchParams.get('v');
+    }
+    return null;
+  } catch (e) {
+    return null;
+  }
+}
+
+document.getElementById('ytLoadBtn').addEventListener('click', () => {
+  const url = document.getElementById('ytUrlInput').value.trim();
+  const videoId = parseYoutubeUrl(url);
+  if (!videoId) {
+    toast('無法解析這個 YouTube 網址');
+    return;
+  }
+  loadYoutubePlayer(videoId);
+});
+
+function loadYoutubePlayer(videoId) {
+  if (!ytReady || typeof YT === 'undefined') {
+    // API 尚未載入完成時，稍後重試一次
+    setTimeout(() => loadYoutubePlayer(videoId), 500);
+    return;
+  }
+  if (ytPlayer) {
+    ytPlayer.loadVideoById(videoId);
+    return;
+  }
+  ytPlayer = new YT.Player('ytPlayer', {
+    videoId,
+    playerVars: { rel: 0 }
+  });
+}
+
+// 分析逐字稿：計算未知單字佔比（未出現在字卡庫中的單字視為未知）
+document.getElementById('analyzeBtn').addEventListener('click', () => {
+  const text = document.getElementById('transcriptInput').value;
+  analyzeTranscript(text);
+  renderClickableTranscript(text);
+});
+
+function analyzeTranscript(text) {
+  const words = (text.match(/[A-Za-z]+(?:'[A-Za-z]+)?/g) || []).map((w) => w.toLowerCase());
+  if (!words.length) {
+    document.getElementById('analyzeResult').textContent = '';
+    return;
+  }
+  const knownSet = new Set(CARDS.map((c) => c.word));
+  const unknown = words.filter((w) => !knownSet.has(w));
+  const ratio = unknown.length / words.length;
+  const resultEl = document.getElementById('analyzeResult');
+  if (ratio > 0.15) {
+    resultEl.innerHTML = `<span class="text-red-400">⚠️ 難度過高（超出 i+1 範圍）：未知單字佔 ${(ratio * 100).toFixed(1)}%</span>`;
+  } else {
+    resultEl.innerHTML = `<span class="text-sage">難度適中：未知單字佔 ${(ratio * 100).toFixed(1)}%</span>`;
+  }
+}
+
+// 將逐字稿渲染為可點擊的單字，點擊時暫停影片並帶出語境句
+// v3：支援 Shift 連點與拖曳反白選取片語（每句包成一個 sentence-block，方便判斷選取範圍是否跨句）
+let lastClickedToken = null;
+
+function renderClickableTranscript(text) {
+  const container = document.getElementById('transcriptRender');
+  container.innerHTML = '';
+  lastClickedToken = null;
+  if (!text.trim()) return;
+
+  const sentences = splitSentences(text);
+  sentences.forEach((sentence) => {
+    const sentenceBlock = document.createElement('span');
+    sentenceBlock.className = 'sentence-block';
+    sentenceBlock.dataset.sentence = sentence;
+
+    const tokens = sentence.split(/(\s+)/);
+    let tokenIndex = 0;
+    tokens.forEach((token) => {
+      if (/^[A-Za-z]+(?:'[A-Za-z]+)?$/.test(token)) {
+        const span = document.createElement('span');
+        span.className = 'word-token';
+        span.textContent = token;
+        span.dataset.tokenIndex = tokenIndex++;
+        span.addEventListener('click', (e) => onWordClick(span, sentence, sentenceBlock, e.shiftKey));
+        sentenceBlock.appendChild(span);
+      } else {
+        sentenceBlock.appendChild(document.createTextNode(token));
+      }
+    });
+    container.appendChild(sentenceBlock);
+    container.appendChild(document.createTextNode(' '));
+  });
+}
+
+// 單點查單字；按住 Shift 點第二個字，中間整段當作片語一起查
+function onWordClick(span, sentence, sentenceBlock, isShiftClick) {
+  if (ytPlayer && typeof ytPlayer.pauseVideo === 'function') {
+    ytPlayer.pauseVideo();
+  }
+
+  if (isShiftClick && lastClickedToken && lastClickedToken.sentenceBlock === sentenceBlock) {
+    const startIdx = Math.min(lastClickedToken.index, Number(span.dataset.tokenIndex));
+    const endIdx = Math.max(lastClickedToken.index, Number(span.dataset.tokenIndex));
+    const wordSpans = Array.from(sentenceBlock.querySelectorAll('.word-token')).filter((s) => {
+      const idx = Number(s.dataset.tokenIndex);
+      return idx >= startIdx && idx <= endIdx;
+    });
+    const phrase = wordSpans.map((s) => s.textContent).join(' ');
+    lastClickedToken = null;
+    openLookupModal(phrase.toLowerCase(), sentence.trim());
+    return;
+  }
+
+  lastClickedToken = { index: Number(span.dataset.tokenIndex), sentenceBlock };
+  openLookupModal(span.textContent.toLowerCase(), sentence.trim());
+}
+
+// 拖曳反白選取連續文字時，跳出「查詢此片語」浮動按鈕
+let phrasePopupEl = null;
+
+function ensurePhrasePopup() {
+  if (phrasePopupEl) return phrasePopupEl;
+  phrasePopupEl = document.createElement('button');
+  phrasePopupEl.id = 'phrasePopupBtn';
+  phrasePopupEl.className = 'hidden fixed z-40 btn-primary text-xs px-3 py-1.5 rounded-lg shadow-lg';
+  phrasePopupEl.textContent = '查詢此片語';
+  document.body.appendChild(phrasePopupEl);
+  return phrasePopupEl;
+}
+
+document.addEventListener('mouseup', () => {
+  const popup = ensurePhrasePopup();
+  const selection = window.getSelection();
+  const text = selection ? selection.toString().trim() : '';
+
+  if (!text || !text.includes(' ') || selection.rangeCount === 0) {
+    popup.classList.add('hidden');
+    return;
+  }
+
+  const anchorNode = selection.anchorNode;
+  const sentenceBlock = anchorNode && anchorNode.nodeType === 3
+    ? anchorNode.parentElement.closest('.sentence-block')
+    : anchorNode && anchorNode.closest && anchorNode.closest('.sentence-block');
+  if (!sentenceBlock) {
+    popup.classList.add('hidden');
+    return;
+  }
+
+  const rect = selection.getRangeAt(0).getBoundingClientRect();
+  popup.style.left = `${Math.max(8, rect.left)}px`;
+  popup.style.top = `${Math.max(8, rect.top - 40)}px`;
+  popup.classList.remove('hidden');
+
+  popup.onclick = () => {
+    if (ytPlayer && typeof ytPlayer.pauseVideo === 'function') {
+      ytPlayer.pauseVideo();
+    }
+    openLookupModal(text.toLowerCase(), (sentenceBlock.dataset.sentence || text).trim());
+    popup.classList.add('hidden');
+    selection.removeAllRanges();
+  };
+});
+
+/* =========================================================
+   3. 字典查詢與防呆機制（v3：本地 ECDICT 優先，中文釋義為主）
+   ========================================================= */
+
+// ECDICT 離線辭典：{ 單字: { w, p(音標), t(中文釋義), tag(考試標籤) } }
+// 由 dict/ecdict.json 載入，查無網路也能即時查到中文
+let ECDICT = {};
+
+async function loadEcdict() {
+  try {
+    const res = await fetch('./dict/ecdict.json');
+    if (res.ok) ECDICT = await res.json();
+  } catch (e) {
+    console.error('ECDICT 載入失敗，將僅使用線上翻譯', e);
+  }
+}
+
+// 依序嘗試的原形化規則：去尾 s / es / ed / ing（ing 去尾後嘗試補 e）
+function lemmatizeCandidates(word) {
+  const candidates = [];
+  if (word.endsWith('ies') && word.length > 4) candidates.push(word.slice(0, -3) + 'y');
+  if (word.endsWith('es')) candidates.push(word.slice(0, -2));
+  if (word.endsWith('s')) candidates.push(word.slice(0, -1));
+  if (word.endsWith('ed')) candidates.push(word.slice(0, -2));
+  if (word.endsWith('ing')) {
+    const stem = word.slice(0, -3);
+    candidates.push(stem);
+    candidates.push(stem + 'e'); // making -> make
+  }
+  return [...new Set(candidates)].filter((c) => c && c !== word);
+}
+
+// 查本地 ECDICT：原形查不到就依序嘗試原形化候選字
+function lookupEcdict(word) {
+  if (ECDICT[word]) return ECDICT[word];
+  for (const candidate of lemmatizeCandidates(word)) {
+    if (ECDICT[candidate]) return ECDICT[candidate];
+  }
+  return null;
+}
+
+// Google 翻譯免費端點，帶 5 秒 timeout，失敗回傳 null
+async function fetchGoogleTranslate(word) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5000);
+  try {
+    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=zh-TW&dt=t&q=${encodeURIComponent(word)}`;
+    const res = await fetch(url, { signal: controller.signal });
+    clearTimeout(timer);
+    if (!res.ok) return null;
+    const data = await res.json();
+    const translated = (data[0] || []).map((seg) => seg[0]).join('').trim();
+    return translated || null;
+  } catch (e) {
+    clearTimeout(timer);
+    return null;
+  }
+}
+
+// dictionaryapi.dev 降級為選配：只用來補英英釋義與音標，帶 5 秒 timeout
+async function fetchDictionary(word) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5000);
+  try {
+    const res = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(word)}`, {
+      signal: controller.signal
+    });
+    clearTimeout(timer);
+    if (!res.ok) return null;
+    const data = await res.json();
+    return Array.isArray(data) ? data[0] : null;
+  } catch (e) {
+    clearTimeout(timer);
+    return null; // timeout 或網路錯誤，一律視為查無結果，交給呼叫端處理
+  }
+}
+
+async function lookupEnDictionary(word) {
+  let entry = await fetchDictionary(word);
+  if (entry) return { entry, matchedWord: word };
+  for (const candidate of lemmatizeCandidates(word)) {
+    entry = await fetchDictionary(candidate);
+    if (entry) return { entry, matchedWord: candidate };
+  }
+  return null;
+}
+
+function extractPhonetic(entry) {
+  if (entry.phonetic) return entry.phonetic;
+  const found = (entry.phonetics || []).find((p) => p.text);
+  return found ? found.text : '';
+}
+
+function extractEnDefinition(entry) {
+  const meaning = entry.meanings && entry.meanings[0];
+  const def = meaning && meaning.definitions && meaning.definitions[0];
+  return def ? def.definition : '';
+}
+
+// 主查詢流程：本地 ECDICT（離線、即時）-> Google 翻譯（取得中文）-> dictionaryapi.dev（選配，補英英釋義/音標）
+async function lookupWord(word) {
+  const ecdictHit = lookupEcdict(word);
+  if (ecdictHit) {
+    return {
+      source: 'ecdict',
+      phonetic: ecdictHit.p || '',
+      zhDefinition: ecdictHit.t || '',
+      enDefinition: '',
+      tags: ecdictHit.tag || ''
+    };
+  }
+
+  const [zh, enResult] = await Promise.all([
+    fetchGoogleTranslate(word),
+    lookupEnDictionary(word)
+  ]);
+
+  if (zh || enResult) {
+    return {
+      source: zh ? 'google' : 'dictionaryapi',
+      phonetic: enResult ? extractPhonetic(enResult.entry) : '',
+      zhDefinition: zh || '',
+      enDefinition: enResult ? extractEnDefinition(enResult.entry) : '',
+      tags: ''
+    };
+  }
+  return null;
+}
+
+/* =========================================================
+   查詢/儲存 Modal 共用邏輯
+   ========================================================= */
+
+let modalContext = { existingId: null, enDefinition: '', tags: '' };
+
+function describeLookupSource(result) {
+  const labelMap = {
+    ecdict: '本地辭典查到中文釋義',
+    google: '線上翻譯查到中文釋義',
+    dictionaryapi: '查無中文，僅查到英文釋義，請自行填寫中文翻譯'
+  };
+  const label = labelMap[result.source] || '查詢完成';
+  return result.enDefinition ? `${label}（英文釋義：${result.enDefinition}）` : label;
+}
+
+async function openLookupModal(word, sentence) {
+  document.getElementById('lookupModal').classList.remove('hidden');
+  document.getElementById('modalWord').value = word;
+  document.getElementById('modalSentence').value = sentence;
+  document.getElementById('modalPhonetic').value = '';
+  document.getElementById('modalMeaning').value = '';
+  document.getElementById('modalSentenceZh').value = '';
+  document.getElementById('modalStatus').textContent = '查詢中…';
+  modalContext.enDefinition = '';
+  modalContext.tags = '';
+
+  const existing = CARDS.find((c) => c.word === word.toLowerCase() && c.status === 'active');
+  modalContext.existingId = existing ? existing.id : null;
+  if (existing) {
+    document.getElementById('modalPhonetic').value = existing.phonetic;
+    document.getElementById('modalMeaning').value = existing.zhDefinition;
+    document.getElementById('modalSentenceZh').value = existing.sentenceZh || '';
+    modalContext.enDefinition = existing.enDefinition || '';
+    modalContext.tags = existing.tags || '';
+  }
+
+  // 單字查詢與整句翻譯同時進行，互不阻塞（其中一個逾時/失敗不影響另一個）
+  const [result, sentenceZh] = await Promise.all([
+    lookupWord(word.toLowerCase()),
+    fetchGoogleTranslate(sentence)
+  ]);
+
+  if (sentenceZh) {
+    document.getElementById('modalSentenceZh').value = sentenceZh;
+  }
+
+  if (result) {
+    document.getElementById('modalPhonetic').value = result.phonetic || document.getElementById('modalPhonetic').value;
+    document.getElementById('modalMeaning').value = result.zhDefinition || document.getElementById('modalMeaning').value;
+    modalContext.enDefinition = result.enDefinition || modalContext.enDefinition;
+    modalContext.tags = result.tags || modalContext.tags;
+    document.getElementById('modalStatus').textContent = describeLookupSource(result);
+  } else {
+    document.getElementById('modalStatus').textContent = '查無結果（或逾時），請手動填寫翻譯與音標。';
+  }
+
+  autoGrowTextarea(document.getElementById('modalSentence'));
+  autoGrowTextarea(document.getElementById('modalSentenceZh'));
+}
+
+document.getElementById('closeModalBtn').addEventListener('click', () => {
+  document.getElementById('lookupModal').classList.add('hidden');
+});
+
+document.getElementById('modalSaveBtn').addEventListener('click', () => {
+  const word = document.getElementById('modalWord').value.trim().toLowerCase();
+  if (!word) return;
+  const phonetic = document.getElementById('modalPhonetic').value.trim();
+  const zhDefinition = document.getElementById('modalMeaning').value.trim();
+  const sentence = document.getElementById('modalSentence').value.trim();
+  const sentenceZh = document.getElementById('modalSentenceZh').value.trim();
+  const enDefinition = modalContext.enDefinition;
+  const tags = modalContext.tags;
+
+  const existingIdx = CARDS.findIndex((c) => c.word === word);
+  if (existingIdx >= 0) {
+    const c = CARDS[existingIdx];
+    c.phonetic = phonetic;
+    c.zhDefinition = zhDefinition;
+    c.enDefinition = enDefinition;
+    c.tags = tags;
+    c.sentence = sentence || c.sentence;
+    c.sentenceZh = sentenceZh;
+    c.status = 'active';
+  } else {
+    CARDS.push({
+      ...makeInboxCard(word, sentence, generateBatchId(), `單字查詢建卡．${formatBatchTimestamp()}`),
+      phonetic,
+      zhDefinition,
+      enDefinition,
+      tags,
+      sentenceZh,
+      status: 'active'
+    });
+  }
+  persist();
+  renderInboxList();
+  document.getElementById('lookupModal').classList.add('hidden');
+  toast('已儲存字卡');
+});
+
+/* =========================================================
+   4. Contextual-SRS（SM-2）記憶引擎
+   ========================================================= */
+
+// 初期間隔節奏（天）：1, 3, 7, 14, 30，之後依 easiness factor 遞增
+const INTERVAL_STEPS = [1, 3, 7, 14, 30];
+
+function sm2Update(card, quality) {
+  if (quality < 3) {
+    // 答錯：重置間隔，當日重新排入複習
+    card.reps = 0;
+    card.interval = 1;
+    card.dueDate = todayISO();
+  } else {
+    card.reps += 1;
+    if (card.reps <= INTERVAL_STEPS.length) {
+      card.interval = INTERVAL_STEPS[card.reps - 1];
+    } else {
+      card.interval = Math.round(card.interval * card.ef);
+    }
+    card.dueDate = addDays(card.interval);
+  }
+  // SM-2 easiness factor 公式，下限 1.3
+  const ef = card.ef + (0.1 - (5 - quality) * (0.08 + (5 - quality) * 0.02));
+  card.ef = Math.max(1.3, ef);
+  card.lastReviewed = new Date().toISOString();
+  return card;
+}
+
+function getDueCards() {
+  const today = todayISO();
+  return CARDS.filter((c) => c.status === 'active' && c.dueDate <= today);
+}
+
+// 產生挖空句：把句子中對應單字換成底線
+function renderClozeText(card) {
+  const escaped = card.word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const re = new RegExp(`\\b${escaped}\\b`, 'i');
+  if (re.test(card.sentence)) {
+    return card.sentence.replace(re, '<span class="cloze-blank">______</span>');
+  }
+  return card.sentence + ' <span class="cloze-blank">______</span>';
+}
+
+// 內建語音品質參差不齊，依關鍵字優先挑選聽起來自然的神經網路語音（Edge/Windows/Chrome 常見命名）
+const NATURAL_VOICE_HINTS = ['Natural', 'Neural', 'Online', 'Aria', 'Jenny', 'Guy', 'Samantha', 'Google US English', 'Google UK English Female'];
+
+function pickBestVoice(voices) {
+  const enVoices = voices.filter((v) => v.lang.startsWith('en'));
+  if (!enVoices.length) return null;
+  for (const hint of NATURAL_VOICE_HINTS) {
+    const found = enVoices.find((v) => v.name.includes(hint));
+    if (found) return found;
+  }
+  return enVoices[0];
+}
+
+function getSelectedVoice(voices) {
+  const settings = loadSettings();
+  if (settings.voiceURI) {
+    const chosen = voices.find((v) => v.voiceURI === settings.voiceURI);
+    if (chosen) return chosen;
+  }
+  return pickBestVoice(voices);
+}
+
+// 語音清單通常是非同步載入，畫面上的下拉選單需要等 voiceschanged 才會有完整清單
+function populateVoiceList() {
+  if (!('speechSynthesis' in window)) return;
+  const voices = speechSynthesis.getVoices().filter((v) => v.lang.startsWith('en'));
+  if (!voices.length) return;
+
+  const select = document.getElementById('voiceSelect');
+  const settings = loadSettings();
+  const best = pickBestVoice(voices);
+  const currentValue = settings.voiceURI || (best ? best.voiceURI : '');
+
+  select.innerHTML = voices
+    .map((v) => `<option value="${escapeHtml(v.voiceURI)}">${escapeHtml(v.name)}（${escapeHtml(v.lang)}）</option>`)
+    .join('');
+  select.value = currentValue;
+}
+
+if ('speechSynthesis' in window) {
+  speechSynthesis.addEventListener('voiceschanged', populateVoiceList);
+}
+
+document.getElementById('voiceSelect').addEventListener('change', (e) => {
+  const settings = loadSettings();
+  settings.voiceURI = e.target.value;
+  saveSettings(settings);
+});
+
+document.getElementById('voicePreviewBtn').addEventListener('click', () => {
+  speakSentence('The evidence was conclusive in court.');
+});
+
+function speakSentence(text) {
+  if (!('speechSynthesis' in window)) {
+    toast('此瀏覽器不支援語音朗讀');
+    return;
+  }
+  const utter = new SpeechSynthesisUtterance(text);
+  const voices = speechSynthesis.getVoices();
+  const enVoice = getSelectedVoice(voices);
+  if (enVoice) utter.voice = enVoice;
+  utter.lang = enVoice ? enVoice.lang : 'en-US';
+  speechSynthesis.cancel();
+  speechSynthesis.speak(utter);
+}
+
+let reviewQueue = [];
+let currentReviewCard = null;
+
+function startReview() {
+  reviewQueue = getDueCards();
+  showNextReviewCard();
+}
+
+function showNextReviewCard() {
+  document.getElementById('revealArea').classList.add('hidden');
+  document.getElementById('showAnswerBtn').classList.remove('hidden');
+
+  if (!reviewQueue.length) {
+    document.getElementById('reviewEmpty').classList.remove('hidden');
+    document.getElementById('reviewCard').classList.add('hidden');
+    currentReviewCard = null;
+    return;
+  }
+  document.getElementById('reviewEmpty').classList.add('hidden');
+  document.getElementById('reviewCard').classList.remove('hidden');
+
+  currentReviewCard = reviewQueue[0];
+  document.getElementById('reviewRemaining').textContent = reviewQueue.length;
+  document.getElementById('clozeSentence').innerHTML = renderClozeText(currentReviewCard);
+}
+
+document.getElementById('goReviewBtn').addEventListener('click', () => switchPage('review'));
+
+document.getElementById('showAnswerBtn').addEventListener('click', () => {
+  if (!currentReviewCard) return;
+  document.getElementById('revealWord').textContent = currentReviewCard.word;
+  document.getElementById('revealPhonetic').textContent = currentReviewCard.phonetic || '';
+  document.getElementById('revealMeaning').textContent = currentReviewCard.zhDefinition || '（無翻譯記錄）';
+  document.getElementById('revealSentenceZh').textContent = currentReviewCard.sentenceZh || '';
+  document.getElementById('revealArea').classList.remove('hidden');
+  document.getElementById('showAnswerBtn').classList.add('hidden');
+});
+
+document.getElementById('speakBtn').addEventListener('click', () => {
+  if (currentReviewCard) speakSentence(currentReviewCard.sentence);
+});
+
+document.querySelectorAll('.score-btn').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    if (!currentReviewCard) return;
+    const quality = Number(btn.dataset.score);
+    sm2Update(currentReviewCard, quality);
+    persist();
+    reviewQueue.shift();
+    showNextReviewCard();
+  });
+});
+
+/* =========================================================
+   5. 複習提醒（通知 / App Badge / 儀表板）
+   ========================================================= */
+
+function renderDashboard() {
+  const due = getDueCards();
+  document.getElementById('dueCount').textContent = due.length;
+  document.getElementById('inboxCount').textContent = CARDS.filter((c) => c.status === 'inbox').length;
+  document.getElementById('totalCount').textContent = CARDS.filter((c) => c.status === 'active').length;
+
+  const dot = document.getElementById('dueDot');
+  const topBadge = document.getElementById('dueBadgeTop');
+  if (due.length > 0) {
+    dot.classList.remove('hidden');
+    topBadge.textContent = due.length;
+    topBadge.classList.remove('hidden');
+  } else {
+    dot.classList.add('hidden');
+    topBadge.classList.add('hidden');
+  }
+  updateAppBadge(due.length);
+}
+
+// App Badge：支援的平台自動顯示，不支援則靜默略過
+function updateAppBadge(n) {
+  try {
+    if (n > 0 && navigator.setAppBadge) {
+      navigator.setAppBadge(n);
+    } else if (navigator.clearAppBadge) {
+      navigator.clearAppBadge();
+    }
+  } catch (e) {
+    // 不支援的平台靜默忽略
+  }
+}
+
+// 開啟 App 或切回前景時，檢查到期字卡並觸發一次系統通知（每日最多一次，避免騷擾）
+function checkDueOnVisible() {
+  if (document.visibilityState !== 'visible') return;
+  const due = getDueCards();
+  renderDashboard();
+  if (due.length === 0) return;
+  if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+
+  const settings = loadSettings();
+  if (settings.lastNotifiedDate === todayISO()) return;
+
+  new Notification('記憶即將遺忘', {
+    body: `今日有 ${due.length} 張字卡待複習`,
+    icon: './icons/icon-192.png'
+  });
+  settings.lastNotifiedDate = todayISO();
+  saveSettings(settings);
+}
+
+document.addEventListener('visibilitychange', checkDueOnVisible);
+
+document.getElementById('requestNotifyBtn').addEventListener('click', async () => {
+  if (typeof Notification === 'undefined') {
+    toast('此瀏覽器不支援通知');
+    return;
+  }
+  const perm = await Notification.requestPermission();
+  updateNotifyStatus();
+  if (perm === 'granted') {
+    toast('已開啟到期提醒通知');
+    checkDueOnVisible();
+  }
+});
+
+function updateNotifyStatus() {
+  const el = document.getElementById('notifyStatus');
+  if (typeof Notification === 'undefined') {
+    el.textContent = '此瀏覽器不支援通知';
+    return;
+  }
+  const map = { granted: '已授權 ✅', denied: '已被拒絕，請至瀏覽器設定手動開啟', default: '尚未授權' };
+  el.textContent = map[Notification.permission] || '';
+}
+
+/* =========================================================
+   6. 零成本資料同步
+   ========================================================= */
+
+document.getElementById('copyJsonBtn').addEventListener('click', async () => {
+  const json = JSON.stringify(CARDS, null, 2);
+  try {
+    await navigator.clipboard.writeText(json);
+    toast('已複製到剪貼簿');
+  } catch (e) {
+    toast('複製失敗，請改用下載');
+  }
+});
+
+document.getElementById('downloadJsonBtn').addEventListener('click', () => {
+  const json = JSON.stringify(CARDS, null, 2);
+  const blob = new Blob([json], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `english-cards-${todayISO()}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+});
+
+function validateImportedCards(data) {
+  if (!Array.isArray(data)) return false;
+  return data.every((c) => c && typeof c.word === 'string' && typeof c.sentence === 'string');
+}
+
+document.getElementById('mergeBtn').addEventListener('click', () => {
+  runImport('merge');
+});
+document.getElementById('overwriteBtn').addEventListener('click', () => {
+  runImport('overwrite');
+});
+
+function runImport(mode) {
+  const raw = document.getElementById('importInput').value;
+  const resultEl = document.getElementById('importResult');
+  let data;
+  try {
+    data = JSON.parse(raw);
+  } catch (e) {
+    resultEl.innerHTML = '<span class="text-red-400">JSON 格式錯誤，未變更任何資料</span>';
+    return;
+  }
+  if (!validateImportedCards(data)) {
+    resultEl.innerHTML = '<span class="text-red-400">資料格式不符（缺少 word / sentence），未變更任何資料</span>';
+    return;
+  }
+
+  if (mode === 'overwrite') {
+    CARDS = data;
+  } else {
+    // 合併模式：以 word 為 key 去重，保留較新的複習進度（依 lastReviewed，其次 createdAt）
+    const map = new Map(CARDS.map((c) => [c.word, c]));
+    data.forEach((incoming) => {
+      const existing = map.get(incoming.word);
+      if (!existing) {
+        map.set(incoming.word, incoming);
+        return;
+      }
+      const existingTime = existing.lastReviewed || existing.createdAt || '';
+      const incomingTime = incoming.lastReviewed || incoming.createdAt || '';
+      if (incomingTime > existingTime) {
+        map.set(incoming.word, incoming);
+      }
+    });
+    CARDS = Array.from(map.values());
+  }
+  persist();
+  renderInboxList();
+  resultEl.innerHTML = `<span class="text-sage">已成功${mode === 'overwrite' ? '覆蓋' : '合併'}，共 ${CARDS.length} 張字卡</span>`;
+  document.getElementById('importInput').value = '';
+}
+
+/* =========================================================
+   字卡批次管理（v3 新增）
+   ========================================================= */
+
+let manageSelected = new Set();
+
+// 依 batchId 彙整，取得每批的來源描述、數量、最早建立時間
+function getBatchSummaries() {
+  const map = new Map();
+  CARDS.forEach((c) => {
+    if (!map.has(c.batchId)) {
+      map.set(c.batchId, { batchId: c.batchId, source: c.source, count: 0, createdAt: c.createdAt });
+    }
+    const entry = map.get(c.batchId);
+    entry.count += 1;
+    if (c.createdAt < entry.createdAt) entry.createdAt = c.createdAt;
+  });
+  return Array.from(map.values()).sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+}
+
+function renderManageFilters() {
+  const batches = getBatchSummaries();
+
+  const filterSelect = document.getElementById('manageBatchFilter');
+  const prevFilterValue = filterSelect.value;
+  filterSelect.innerHTML = '<option value="">全部批次</option>' +
+    batches.map((b) => `<option value="${escapeHtml(b.batchId)}">${escapeHtml(b.source)}（${b.count} 張）</option>`).join('');
+  filterSelect.value = prevFilterValue;
+
+  const deleteSelect = document.getElementById('manageBatchDeleteSelect');
+  const prevDeleteValue = deleteSelect.value;
+  deleteSelect.innerHTML = batches
+    .map((b) => `<option value="${escapeHtml(b.batchId)}">${escapeHtml(b.source)}（${b.count} 張）</option>`)
+    .join('');
+  if (prevDeleteValue) deleteSelect.value = prevDeleteValue;
+}
+
+function getFilteredManageCards() {
+  const batchId = document.getElementById('manageBatchFilter').value;
+  const status = document.getElementById('manageStatusFilter').value;
+  const dateFrom = document.getElementById('manageDateFrom').value;
+  const dateTo = document.getElementById('manageDateTo').value;
+
+  return CARDS.filter((c) => {
+    if (batchId && c.batchId !== batchId) return false;
+    if (status && c.status !== status) return false;
+    const createdDate = (c.createdAt || '').slice(0, 10);
+    if (dateFrom && createdDate < dateFrom) return false;
+    if (dateTo && createdDate > dateTo) return false;
+    return true;
+  });
+}
+
+function renderManagePage() {
+  renderManageFilters();
+  manageSelected = new Set();
+  renderManageList();
+}
+
+function renderManageList() {
+  const list = getFilteredManageCards();
+  const container = document.getElementById('manageList');
+  container.innerHTML = '';
+
+  document.getElementById('manageSelectedCount').textContent = manageSelected.size;
+  document.getElementById('manageSelectAll').checked = list.length > 0 && manageSelected.size === list.length;
+
+  if (!list.length) {
+    container.innerHTML = '<p class="text-center text-muted text-sm py-8">沒有符合篩選條件的字卡</p>';
+    return;
+  }
+
+  list.forEach((card) => {
+    const row = document.createElement('div');
+    row.className = 'specimen-card p-3';
+    row.innerHTML = `
+      <div class="flex items-start gap-2">
+        <input type="checkbox" class="manage-checkbox mt-1" ${manageSelected.has(card.id) ? 'checked' : ''}>
+        <div class="min-w-0 flex-1">
+          <div class="flex items-baseline justify-between gap-2">
+            <p class="font-serif text-paper">${escapeHtml(card.word)}</p>
+            <span class="specimen-tag shrink-0">${card.status === 'active' ? '複習中' : '待處理'}</span>
+          </div>
+          <p class="text-sm text-muted">${escapeHtml(card.zhDefinition || '（無翻譯）')}</p>
+          <p class="sentence-preview text-xs text-muted mt-1 line-clamp-2 cursor-pointer">${escapeHtml(card.sentence || '')}</p>
+          <div class="flex flex-wrap gap-x-3 text-[10px] text-muted font-mono mt-1">
+            <span>來源：${escapeHtml(card.source || '')}</span>
+            <span>建立：${escapeHtml((card.createdAt || '').slice(0, 10))}</span>
+            <span>下次複習：${escapeHtml(card.dueDate || '')}</span>
+          </div>
+        </div>
+      </div>`;
+
+    row.querySelector('.manage-checkbox').addEventListener('change', (e) => {
+      if (e.target.checked) manageSelected.add(card.id);
+      else manageSelected.delete(card.id);
+      document.getElementById('manageSelectedCount').textContent = manageSelected.size;
+      document.getElementById('manageSelectAll').checked = manageSelected.size === list.length;
+    });
+
+    // 語境句預設兩行截斷，點擊展開/收合完整內容
+    row.querySelector('.sentence-preview').addEventListener('click', (e) => {
+      e.target.classList.toggle('line-clamp-2');
+    });
+
+    container.appendChild(row);
+  });
+}
+
+document.getElementById('manageSelectAll').addEventListener('change', (e) => {
+  const list = getFilteredManageCards();
+  if (e.target.checked) {
+    manageSelected = new Set(list.map((c) => c.id));
+  } else {
+    manageSelected = new Set();
+  }
+  renderManageList();
+});
+
+[document.getElementById('manageBatchFilter'), document.getElementById('manageStatusFilter'),
+  document.getElementById('manageDateFrom'), document.getElementById('manageDateTo')].forEach((el) => {
+  el.addEventListener('change', () => {
+    manageSelected = new Set();
+    renderManageList();
+  });
+});
+
+document.getElementById('manageDeleteSelectedBtn').addEventListener('click', () => {
+  if (manageSelected.size === 0) {
+    toast('尚未選取任何字卡');
+    return;
+  }
+  const confirmed = confirm(`確定要刪除已選取的 ${manageSelected.size} 張字卡嗎？此動作無法復原。`);
+  if (!confirmed) return;
+  CARDS = CARDS.filter((c) => !manageSelected.has(c.id));
+  manageSelected = new Set();
+  persist();
+  renderInboxList();
+  renderManagePage();
+  toast('已刪除選取的字卡');
+});
+
+document.getElementById('manageDeleteBatchBtn').addEventListener('click', () => {
+  const batchId = document.getElementById('manageBatchDeleteSelect').value;
+  if (!batchId) {
+    toast('沒有可刪除的批次');
+    return;
+  }
+  const count = CARDS.filter((c) => c.batchId === batchId).length;
+  if (count === 0) {
+    toast('這個批次已經沒有字卡');
+    return;
+  }
+  const confirmed = confirm(`確定要刪除整批共 ${count} 張字卡嗎？此動作無法復原。`);
+  if (!confirmed) return;
+  CARDS = CARDS.filter((c) => c.batchId !== batchId);
+  manageSelected = new Set();
+  persist();
+  renderInboxList();
+  renderManagePage();
+  toast('已刪除整個批次');
+});
+
+/* =========================================================
+   分頁切換
+   ========================================================= */
+
+function switchPage(page) {
+  document.querySelectorAll('.page').forEach((el) => el.classList.add('hidden'));
+  document.getElementById(`page-${page}`).classList.remove('hidden');
+  document.querySelectorAll('.tab-btn').forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.page === page);
+  });
+  if (page === 'review') startReview();
+  if (page === 'collect') renderInboxList();
+  if (page === 'manage') renderManagePage();
+}
+
+document.querySelectorAll('.tab-btn').forEach((btn) => {
+  btn.addEventListener('click', () => switchPage(btn.dataset.page));
+});
+
+document.getElementById('goManageBtn').addEventListener('click', () => switchPage('manage'));
+document.getElementById('manageBackBtn').addEventListener('click', () => switchPage('home'));
+
+/* =========================================================
+   初始化
+   ========================================================= */
+
+async function init() {
+  loadEcdict(); // 非阻塞載入，查詢時才需要，不擋畫面顯示
+  parseUrlText();
+  renderDashboard();
+  renderInboxList();
+  updateNotifyStatus();
+  checkDueOnVisible();
+  populateVoiceList(); // 部分瀏覽器語音清單同步就緒，先嘗試填一次
+
+  if (pendingQuickAddText) {
+    renderQuickAdd(pendingQuickAddText);
+    switchPage('quickadd');
+  }
+
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./sw.js').catch((e) => console.error('SW 註冊失敗', e));
+  }
+}
+
+init();
+</script>
+</body>
+</html>
