@@ -1,9 +1,9 @@
 // ==UserScript==
-// @name         英文習得 - YouTube 逐字稿收藏
+// @name         英文習得 - 網頁選字收藏 + YouTube 逐字稿收藏
 // @namespace    sweetenbud.eng-immersion
-// @version      1.2
-// @description  在 YouTube 逐字稿面板上加「收藏這句」按鈕，點一下直接開啟 PWA 建卡，不用複製貼上
-// @match        https://www.youtube.com/watch*
+// @version      1.3
+// @description  任何網頁選取英文句子都能一鍵送進字卡 App；YouTube 影片頁面額外有逐句收藏與整份逐字稿傳送功能
+// @match        *://*/*
 // @grant        GM_setValue
 // @grant        GM_getValue
 // @grant        GM_registerMenuCommand
@@ -51,9 +51,64 @@
   }
 
   // ---------------------------------------------------------
+  // 任何網頁都能用：選取文字後跳出「收藏這句」浮動按鈕
+  // ---------------------------------------------------------
+  let selectionPopupEl = null;
+
+  function ensureSelectionPopup() {
+    if (selectionPopupEl) return selectionPopupEl;
+    selectionPopupEl = document.createElement('button');
+    selectionPopupEl.id = 'eng-selection-popup-btn';
+    selectionPopupEl.textContent = '★ 收藏這句';
+    selectionPopupEl.style.cssText = [
+      'position:fixed', 'z-index:999999', 'display:none',
+      'background:#d9a253', 'color:#14120f', 'font-weight:700',
+      'padding:6px 12px', 'border-radius:9999px', 'border:none',
+      'box-shadow:0 2px 10px rgba(0,0,0,.35)', 'cursor:pointer', 'font-size:13px'
+    ].join(';');
+    document.body.appendChild(selectionPopupEl);
+    return selectionPopupEl;
+  }
+
+  document.addEventListener('mouseup', (e) => {
+    // 自己注入的按鈕被點擊時不要跟選取邏輯打架
+    if (e.target && e.target.id === 'eng-selection-popup-btn') return;
+
+    const popup = ensureSelectionPopup();
+    const selection = window.getSelection();
+    const text = selection ? selection.toString().trim() : '';
+
+    // 至少要有英文字母才顯示，避免選到圖片/UI元素等無意義選取跳出按鈕
+    if (!text || text.length < 2 || !/[A-Za-z]/.test(text) || selection.rangeCount === 0) {
+      popup.style.display = 'none';
+      return;
+    }
+
+    const rect = selection.getRangeAt(0).getBoundingClientRect();
+    popup.style.left = `${Math.max(8, rect.left)}px`;
+    popup.style.top = `${Math.max(8, rect.top - 36)}px`;
+    popup.style.display = 'block';
+
+    popup.onclick = () => {
+      collectText(text);
+      popup.style.display = 'none';
+      selection.removeAllRanges();
+    };
+  });
+
+  document.addEventListener('mousedown', (e) => {
+    if (selectionPopupEl && e.target !== selectionPopupEl) {
+      selectionPopupEl.style.display = 'none';
+    }
+  });
+
+  // ---------------------------------------------------------
+  // 以下都是 YouTube 專屬功能（逐句收藏按鈕、整份逐字稿傳送），只在 YouTube 頁面上執行
+  // ---------------------------------------------------------
+  if (!location.hostname.includes('youtube.com')) return;
+
   // 傳送整份逐字稿：用 postMessage 傳給新開的 PWA 分頁
   // （不走網址參數，因為完整逐字稿常常長到超過瀏覽器網址長度上限）
-  // ---------------------------------------------------------
   function sendBulkTranscript(text) {
     const pwaUrl = getPwaUrl();
     if (!pwaUrl) {
