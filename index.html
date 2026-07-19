@@ -767,9 +767,20 @@ function onWordClick(span, sentence, sentenceBlock, isShiftClick) {
   openLookupModal(span.textContent.toLowerCase(), sentence.trim());
 }
 
-// 拖曳反白選取連續文字：放開滑鼠就直接查詢，不用再找按鈕點第二下
-// （跟平常網頁選字複製動作一樣，唯一差別是放開後直接查詢建卡）
-document.addEventListener('mouseup', () => {
+// 拖曳反白選取連續文字：選取穩定後直接查詢，不用再找按鈕點第二下
+// （跟平常選字複製動作一樣，唯一差別是選好後直接查詢建卡）
+//
+// v3.3 修正：手機是長按＋拖曳選字手把來選字，不會觸發滑鼠的 mouseup 事件，
+// 原本只聽 mouseup 在手機上完全沒反應。改聽 selectionchange 並加防抖，
+// 這個事件不管滑鼠拖曳還是手機觸控選字手把都會觸發，兩邊都能用同一套邏輯。
+let selectionSettleTimer = null;
+
+document.addEventListener('selectionchange', () => {
+  clearTimeout(selectionSettleTimer);
+  selectionSettleTimer = setTimeout(handleSelectionSettled, 400);
+});
+
+function handleSelectionSettled() {
   const selection = window.getSelection();
   const text = selection ? selection.toString().trim() : '';
   if (!text || !text.includes(' ') || selection.rangeCount === 0) return;
@@ -785,7 +796,7 @@ document.addEventListener('mouseup', () => {
   }
   openLookupModal(text.toLowerCase(), (sentenceBlock.dataset.sentence || text).trim());
   selection.removeAllRanges();
-});
+}
 
 /* =========================================================
    3. 字典查詢與防呆機制（v3：本地 ECDICT 優先，中文釋義為主）
