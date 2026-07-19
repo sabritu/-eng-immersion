@@ -1,5 +1,8 @@
-// Service Worker：cache-first 離線快取策略
-const CACHE_NAME = 'eng-immersion-v6';
+// Service Worker：離線快取策略
+// v3.2 修正：index.html／sw.js 這種常常會改版的檔案改成「網路優先」，
+// 避免瀏覽器內建的 SW 更新節流機制（最長可能一天才檢查一次）讓使用者
+// 一直看到舊版；圖示、辭典這種幾乎不會變的檔案維持「快取優先」節省流量。
+const CACHE_NAME = 'eng-immersion-v7';
 const CORE_ASSETS = [
   './',
   './index.html',
@@ -8,6 +11,9 @@ const CORE_ASSETS = [
   './icon-512.png',
   './ecdict.json'
 ];
+
+// 網路優先的檔案（常改版，離線時才退回快取）
+const NETWORK_FIRST_PATHS = ['/', '/index.html', '/sw.js', '/manifest.json'];
 
 // 安裝階段：預先快取核心檔案
 self.addEventListener('install', (event) => {
@@ -29,16 +35,35 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// 攔截請求：cache-first，命中快取直接回傳，否則走網路並補進快取
-// 外部 API（字典查詢、YouTube）不快取，一律走網路，失敗就讓呼叫端自行處理
+function isNetworkFirstPath(pathname) {
+  return NETWORK_FIRST_PATHS.includes(pathname);
+}
+
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
-  // 只快取同網域的 GET 請求，避免快取到字典 API / YouTube 等外部資源
+  // 只處理同網域的 GET 請求，避免快取到字典 API / YouTube 等外部資源
   if (event.request.method !== 'GET' || url.origin !== self.location.origin) {
     return;
   }
 
+  if (isNetworkFirstPath(url.pathname)) {
+    // 網路優先：先試著抓最新版，失敗（離線）才退回快取
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          if (response && response.status === 200) {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+          }
+          return response;
+        })
+        .catch(() => caches.match(event.request))
+    );
+    return;
+  }
+
+  // 其餘靜態資源維持 cache-first，節省流量
   event.respondWith(
     caches.match(event.request).then((cached) => {
       if (cached) return cached;
