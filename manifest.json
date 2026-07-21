@@ -1,12 +1,12 @@
 {
-  "name": "語境沉浸式英文習得",
-  "short_name": "英文習得",
+  "name": "英英美代誌",
+  "short_name": "英英美代誌",
   "description": "零成本純前端的語境沉浸式英文學習 PWA",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
-  "background_color": "#14120f",
-  "theme_color": "#14120f",
+  "background_color": "#1a263c",
+  "theme_color": "#1a263c",
   "orientation": "portrait-primary",
   "icons": [
     {

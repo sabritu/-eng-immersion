@@ -2,7 +2,7 @@
 // v3.2 修正：index.html／sw.js 這種常常會改版的檔案改成「網路優先」，
 // 避免瀏覽器內建的 SW 更新節流機制（最長可能一天才檢查一次）讓使用者
 // 一直看到舊版；圖示、辭典這種幾乎不會變的檔案維持「快取優先」節省流量。
-const CACHE_NAME = 'eng-immersion-v7';
+const CACHE_NAME = 'eng-immersion-v8';
 const CORE_ASSETS = [
   './',
   './index.html',
