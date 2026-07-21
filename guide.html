@@ -310,6 +310,61 @@
     white-space: pre;
   }
 
+  .copy-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    max-width: 100%;
+    background: var(--surface-tint);
+    border: 1px solid var(--hair);
+    border-radius: 8px;
+    padding: 7px 7px 7px 11px;
+    margin: 6px 0 2px;
+  }
+  .copy-chip .chip-text {
+    font-family: ui-monospace, "SF Mono", Consolas, monospace;
+    font-size: 12.5px;
+    color: var(--ink);
+    overflow-x: auto;
+    white-space: nowrap;
+    scrollbar-width: thin;
+  }
+  .copy-chip .copy-btn {
+    flex-shrink: 0;
+    font-family: inherit;
+    font-size: 11.5px;
+    font-weight: 700;
+    border: none;
+    background: var(--accent);
+    color: #fff;
+    padding: 5px 10px;
+    border-radius: 999px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .copy-chip .copy-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .copy-chip .copy-btn.copied { background: #4b8a6f; }
+
+  .cta-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin: 4px 0 24px;
+  }
+  .cta-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--accent);
+    color: #fff;
+    font-weight: 700;
+    font-size: 14px;
+    text-decoration: none;
+    padding: 11px 18px;
+    border-radius: 999px;
+  }
+  .cta-btn:hover { background: var(--accent-strong); }
+
   footer {
     margin-top: 44px;
     padding-top: 20px;
@@ -317,6 +372,7 @@
     font-size: 13px;
     color: var(--muted);
   }
+  footer .copy-chip { margin-top: 10px; }
 
   ::selection { background: rgba(217,162,83,.35); }
 </style>
@@ -329,6 +385,14 @@
   </div>
 </div>
 <p class="lede">這份文件涵蓋裝進手機主畫面、手機上隨手收藏英文句子、電腦上邊上網邊收藏三件事，照你需要的部分看就好，不用整份從頭讀到尾。</p>
+
+<div class="cta-row">
+  <a class="cta-btn" href="https://sabritu.github.io/-eng-immersion/" target="_blank" rel="noopener">開啟 App 網頁版 →</a>
+</div>
+<div class="copy-chip">
+  <code class="chip-text">https://sabritu.github.io/-eng-immersion/</code>
+  <button type="button" class="copy-btn">複製網址</button>
+</div>
 
 <nav class="toc">
   <a href="#install"><span class="n">01</span> 裝進手機主畫面</a>
@@ -354,7 +418,12 @@
         <span class="step-badge">1</span>
         <div class="step-body">
           <h3>用 Safari 打開網址</h3>
-          <p>一定要用 <strong>Safari</strong>（不能用 Chrome 或 LINE 內建瀏覽器），點下方工具列中間的「分享」圖示（方框加箭頭↑）。</p>
+          <p>一定要用 <strong>Safari</strong>（不能用 Chrome 或 LINE 內建瀏覽器），貼上下面這個網址打開：</p>
+          <div class="copy-chip">
+            <code class="chip-text">https://sabritu.github.io/-eng-immersion/</code>
+            <button type="button" class="copy-btn">複製網址</button>
+          </div>
+          <p>打開後點下方工具列中間的「分享」圖示（方框加箭頭↑）。</p>
         </div>
       </li>
       <li>
@@ -381,7 +450,12 @@
         <span class="step-badge">1</span>
         <div class="step-body">
           <h3>用 Chrome 打開網址</h3>
-          <p>用手機內建的 <strong>Chrome</strong> 瀏覽器開啟網址，點右上角「⋮」三個點的選單。</p>
+          <p>用手機內建的 <strong>Chrome</strong> 瀏覽器貼上下面這個網址打開：</p>
+          <div class="copy-chip">
+            <code class="chip-text">https://sabritu.github.io/-eng-immersion/</code>
+            <button type="button" class="copy-btn">複製網址</button>
+          </div>
+          <p>打開後點右上角「⋮」三個點的選單。</p>
         </div>
       </li>
       <li>
@@ -431,20 +505,45 @@
       <li>
         <span class="step-badge">2</span>
         <div class="step-body">
-          <h3>依序加入 4 個動作</h3>
-          <p>點「加入動作」，依序搜尋並疊加以下 4 個，上下順序要對：</p>
-          <p>① <code>取得捷徑輸入項目</code>（型別選「文字」）　② <code>文字</code>（內容留空，把上一步的輸入項目拖進來當變數）　③ <code>URL 編碼</code>（把文字變數編碼一次，避免特殊字元讓網址壞掉）　④ <code>文字</code>（內容填：<code>https://sabritu.github.io/-eng-immersion/?text=</code> 後面接上一步編碼後的變數）</p>
+          <h3>加入「取得捷徑輸入項目」</h3>
+          <p>點「加入動作」搜尋這個動作，加進去，型別選「文字」。這一步是接住你等一下分享過來的句子。</p>
         </div>
       </li>
       <li>
         <span class="step-badge">3</span>
         <div class="step-body">
-          <h3>加入「在 Safari 中打開網址」</h3>
-          <p>再加入動作 <code>在 Safari 中打開網址</code>，選前一步組好的網址文字。</p>
+          <h3>加入「文字」動作，接住句子</h3>
+          <p>再加入一個 <code>文字</code> 動作，內容框留空，把上一步「捷徑輸入項目」拖曳進來放到框裡當變數。</p>
         </div>
       </li>
       <li>
         <span class="step-badge">4</span>
+        <div class="step-body">
+          <h3>加入「URL 編碼」</h3>
+          <p>加入 <code>URL 編碼</code> 動作，把上一步的文字變數拖進來編碼一次，避免句子裡的特殊字元讓網址壞掉。</p>
+        </div>
+      </li>
+      <li>
+        <span class="step-badge">5</span>
+        <div class="step-body">
+          <h3>再加一個「文字」動作，組出完整網址</h3>
+          <p>內容框先貼上這段（複製後貼進去）：</p>
+          <div class="copy-chip">
+            <code class="chip-text">https://sabritu.github.io/-eng-immersion/?text=</code>
+            <button type="button" class="copy-btn">複製</button>
+          </div>
+          <p>貼完游標移到最後面，把上一步「URL 編碼」的結果拖進來接在後面。</p>
+        </div>
+      </li>
+      <li>
+        <span class="step-badge">6</span>
+        <div class="step-body">
+          <h3>加入「在 Safari 中打開網址」</h3>
+          <p>加入這個動作，選前一步組好的那段網址文字。</p>
+        </div>
+      </li>
+      <li>
+        <span class="step-badge">7</span>
         <div class="step-body">
           <h3>命名並開啟「加入分享工作表」</h3>
           <p>把捷徑命名為「加入英文字卡」，進捷徑設定，打開 <code>加入分享工作表</code>（Show in Share Sheet），輸入類型選「文字」，儲存。</p>
@@ -500,7 +599,12 @@
       <span class="step-badge">4</span>
       <div class="step-body">
         <h3>第一次使用時設定 App 網址</h3>
-        <p>在任何網頁選一段英文，第一次點「★ 收藏這句」會跳出視窗要你貼上 App 網址（<code>https://sabritu.github.io/-eng-immersion/</code>），貼上後就不用再填。之後要改，點 Tampermonkey 圖示 → 選單裡的「設定 PWA 網址」重新輸入。</p>
+        <p>在任何網頁選一段英文，第一次點「★ 收藏這句」會跳出視窗要你貼上 App 網址，貼這段：</p>
+        <div class="copy-chip">
+          <code class="chip-text">https://sabritu.github.io/-eng-immersion/</code>
+          <button type="button" class="copy-btn">複製網址</button>
+        </div>
+        <p>貼上後就不用再填。之後要改，點 Tampermonkey 圖示 → 選單裡的「設定 PWA 網址」重新輸入。</p>
       </div>
     </li>
   </ol>
@@ -812,6 +916,21 @@
       });
     });
   })();
+
+  document.querySelectorAll('.copy-chip .copy-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var text = btn.previousElementSibling.textContent;
+      navigator.clipboard.writeText(text).then(function () {
+        var original = btn.textContent;
+        btn.textContent = '已複製 ✓';
+        btn.classList.add('copied');
+        setTimeout(function () {
+          btn.textContent = original;
+          btn.classList.remove('copied');
+        }, 1500);
+      });
+    });
+  });
 
   document.querySelectorAll('.platform-switch').forEach(function (group) {
     var groupName = group.getAttribute('data-group');
