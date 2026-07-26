@@ -2,7 +2,7 @@
 // v3.2 修正：index.html／sw.js 這種常常會改版的檔案改成「網路優先」，
 // 避免瀏覽器內建的 SW 更新節流機制（最長可能一天才檢查一次）讓使用者
 // 一直看到舊版；圖示、辭典這種幾乎不會變的檔案維持「快取優先」節省流量。
-const CACHE_NAME = 'eng-immersion-v8';
+const CACHE_NAME = 'eng-immersion-v9';
 const CORE_ASSETS = [
   './',
   './index.html',
@@ -13,7 +13,18 @@ const CORE_ASSETS = [
 ];
 
 // 網路優先的檔案（常改版，離線時才退回快取）
-const NETWORK_FIRST_PATHS = ['/', '/index.html', '/sw.js', '/manifest.json'];
+// v9 修正：這裡原本寫死絕對路徑（如 '/index.html'），只在網站部署於網域
+// 根目錄時才會match。這個 App 部署在 GitHub Pages 的子路徑
+// （/-eng-immersion/index.html），路徑永遠對不上，導致「網路優先」形同虛設，
+// 使用者不管怎麼重整都還是看到舊版，只能手動清瀏覽器資料才治得好。
+// 改用 endsWith 判斷檔名，不管部署在哪一層路徑下都能正確比對。
+const NETWORK_FIRST_SUFFIXES = ['/index.html', '/sw.js', '/manifest.json'];
+
+function isNetworkFirstPath(pathname) {
+  if (NETWORK_FIRST_SUFFIXES.some((suffix) => pathname.endsWith(suffix))) return true;
+  // 根路徑（例如 /-eng-immersion/ 本身，不含檔名）也要走網路優先
+  return pathname === new URL(self.registration.scope).pathname;
+}
 
 // 安裝階段：預先快取核心檔案
 self.addEventListener('install', (event) => {
@@ -34,10 +45,6 @@ self.addEventListener('activate', (event) => {
     ).then(() => self.clients.claim())
   );
 });
-
-function isNetworkFirstPath(pathname) {
-  return NETWORK_FIRST_PATHS.includes(pathname);
-}
 
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);

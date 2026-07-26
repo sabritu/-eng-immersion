@@ -36,6 +36,7 @@
   }
 </script>
 <style>
+  html, body { overflow-x: hidden; max-width: 100%; }
   body { -webkit-tap-highlight-color: transparent; }
   ::-webkit-scrollbar { width: 6px; height: 6px; }
   ::-webkit-scrollbar-thumb { background: #3f5170; border-radius: 3px; }
@@ -61,7 +62,7 @@
     color: #8993ab;
   }
 
-  .word-token { cursor: pointer; transition: background-color .15s; border-radius: 3px; padding: 1px 3px; }
+  .word-token { cursor: pointer; transition: background-color .15s; border-radius: 3px; padding: 4px 4px; margin: 0 1px; display: inline-block; }
   .word-token:hover { background-color: rgba(217,162,83,.22); }
   .word-token.word-known { color: #8ca083; }
   .quickadd-suggested { text-decoration: underline dashed; text-decoration-color: #d9a253; font-weight: 600; }
@@ -501,11 +502,44 @@ function isSuggestedWord(word) {
 // 把一段文字渲染成可點字／可選片語的句子列表
 // 「快速建卡」畫面（分享/捷徑帶入文字）跟「文字採集」分頁（手動貼上）共用同一套邏輯，
 // 只是渲染到不同的容器，這樣不管文字從哪裡進來，選字/選片語的體驗都一致
-function renderClickableText(text, containerId) {
+// 手機分享文章段落時，系統常會把「網址」跟「該網址的文字片段連結（#:~:text=…）」
+// 一起塞進分享文字，甚至因此讓同一句話重複出現。分兩步清乾淨：
+// 1) 先整段拿掉所有網址（連帶拿掉網址裡重複的文字片段）
+// 2) 再比對句子，把跟前面句子高度重複的句子丟掉（例如同句只是少了開頭引號）
+function stripUrls(text) {
+  // Android 分享網頁劃線片段時，網址常帶 #:~:text=（後面接的是不含 % 編碼的可讀文字，
+  // 中間有空白），單純用「遇到空白就停」的規則會漏掉後半段，殘留一堆垃圾字黏在句子裡。
+  // 所以網址本體只吃到第一個空白或 #，剩下 #:~:text= 之後的整段（含空白）一起連號吃掉。
+  return text
+    .replace(/https?:\/\/[^\s#]*(?:#:~:text=[^\n]*)?/g, ' ')
+    .replace(/[ \t]{2,}/g, ' ')
+    .trim();
+}
+
+function normalizeForDedup(sentence) {
+  return sentence.toLowerCase().replace(/[^a-z0-9']+/g, ' ').trim();
+}
+
+function dedupeSentences(sentences) {
+  const kept = [];
+  const normKept = [];
+  sentences.forEach((sentence) => {
+    const norm = normalizeForDedup(sentence);
+    if (!norm) return;
+    const isDuplicate = normKept.some((k) => k.length > 10 && (k.includes(norm) || norm.includes(k)));
+    if (!isDuplicate) {
+      kept.push(sentence);
+      normKept.push(norm);
+    }
+  });
+  return kept.length ? kept : sentences; // 防呆：萬一全部被判成重複，寧可照原樣顯示也不要開天窗
+}
+
+function renderClickableText(rawText, containerId) {
   const container = document.getElementById(containerId);
   container.innerHTML = '';
   lastClickedToken = null;
-  const sentences = splitSentences(text);
+  const sentences = dedupeSentences(splitSentences(stripUrls(rawText)));
 
   if (!sentences.length) {
     container.innerHTML = '<p class="text-center text-muted text-sm py-8">貼上文字後會顯示在這裡</p>';
@@ -516,7 +550,7 @@ function renderClickableText(text, containerId) {
     const block = document.createElement('div');
     block.className = 'specimen-card p-3';
     const p = document.createElement('p');
-    p.className = 'leading-7 text-paper';
+    p.className = 'leading-7 text-paper break-words';
     p.appendChild(buildSentenceBlock(sentence, true));
     block.appendChild(p);
     container.appendChild(block);
@@ -533,7 +567,10 @@ document.getElementById('quickaddBackBtn').addEventListener('click', () => switc
 function splitSentences(text) {
   const trimmed = text.trim();
   if (!trimmed) return [];
-  const parts = trimmed.split(/(?<=[.!?])\s+/).filter(Boolean);
+  // 分享文字常是「引言／網址(已被清掉)／同一句話又貼一次」這種一行一段的結構，
+  // 換行本身就是明確的段落邊界，先用換行切一輪，段落內再照標點細分句子
+  const lines = trimmed.split(/\n+/).map((l) => l.trim()).filter(Boolean);
+  const parts = lines.flatMap((line) => line.split(/(?<=[.!?])\s+/).filter(Boolean));
   return parts.length ? parts : [trimmed];
 }
 
