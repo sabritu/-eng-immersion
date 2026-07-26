@@ -181,7 +181,7 @@
       <p>目前沒有待複習的字卡</p>
     </div>
     <div id="reviewCard" class="hidden specimen-card p-5 space-y-4">
-      <p class="specimen-tag">剩餘 <span id="reviewRemaining">0</span> 張</p>
+      <p class="specimen-tag">剩餘 <span id="reviewRemaining">0</span> 張<span id="reviewStageTag" class="text-muted"></span></p>
 
       <div class="flip-card">
         <p id="clozeSentence" class="text-xl leading-9 font-serif text-paper break-words whitespace-normal"></p>
@@ -190,7 +190,24 @@
           播放語音
         </button>
 
+        <!-- 第一階段：四選一（reps 0–1，新卡或剛答錯被打回的卡） -->
+        <div id="choiceAnswerArea" class="hidden mt-4 space-y-2">
+          <div id="choiceGrid" class="grid grid-cols-2 gap-2"></div>
+          <button id="skipChoiceBtn" class="btn-quiet w-full py-2.5 rounded-lg text-sm">不知道，直接看答案</button>
+        </div>
+
+        <!-- 第二階段：打字克漏字（reps 2 以上） -->
+        <div id="typeAnswerArea" class="hidden mt-4 space-y-2">
+          <input id="answerInput" type="text" inputmode="text" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false"
+            placeholder="打出空格裡的單字…" class="w-full bg-surface2 border border-hair rounded-lg p-3 text-lg outline-none placeholder:text-muted focus:border-amber">
+          <div class="flex gap-2">
+            <button id="checkAnswerBtn" class="btn-primary flex-1 py-3 rounded-lg">檢查答案</button>
+            <button id="skipAnswerBtn" class="btn-quiet px-4 py-3 rounded-lg text-sm">不知道，直接看答案</button>
+          </div>
+        </div>
+
         <div id="revealArea" class="hidden flip-face flip-back space-y-3 mt-4">
+          <p id="answerJudge" class="hidden text-sm font-bold"></p>
           <div class="bg-surface2 rounded-lg p-3 border border-hair">
             <p class="font-serif text-xl text-amber" id="revealWord"></p>
             <p class="text-sm text-muted font-mono" id="revealPhonetic"></p>
@@ -217,8 +234,6 @@
           </div>
         </div>
       </div>
-
-      <button id="showAnswerBtn" class="btn-primary w-full py-3 rounded-lg">顯示答案</button>
     </div>
   </section>
 
@@ -948,6 +963,36 @@ function getDueCards() {
   return CARDS.filter((c) => c.status === 'active' && c.dueDate <= today);
 }
 
+/* ---- 複習分級：依 reps 決定用哪種測驗方式 ----
+   reps 在自評低於 3 分時會被 sm2Update 歸零，
+   所以答錯的卡會自動掉回第一階段，重新從選擇題開始爬。 */
+const STAGE_TYPE_THRESHOLD = 2; // reps 達到這個數字就升級成打字
+
+function getReviewStage(card) {
+  return (card.reps || 0) < STAGE_TYPE_THRESHOLD ? 'choice' : 'type';
+}
+
+// 洗牌（Fisher-Yates）
+function shuffle(arr) {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+// 從其他字卡的單字抽 3 個當誘答選項；可用單字不足時回傳 null（呼叫端會退回打字模式）
+function buildChoiceOptions(card) {
+  const correct = (card.word || '').trim();
+  const pool = [...new Set(
+    CARDS.map((c) => (c.word || '').trim())
+         .filter((w) => w && w.toLowerCase() !== correct.toLowerCase())
+  )];
+  if (pool.length < 3) return null;
+  return shuffle([correct, ...shuffle(pool).slice(0, 3)]);
+}
+
 // 產生挖空句：把句子中對應單字換成底線
 function renderClozeText(card) {
   const escaped = card.word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -1035,7 +1080,8 @@ function startReview() {
 
 function showNextReviewCard() {
   document.getElementById('revealArea').classList.add('hidden');
-  document.getElementById('showAnswerBtn').classList.remove('hidden');
+  document.getElementById('answerInput').value = '';
+  document.getElementById('answerJudge').classList.add('hidden');
 
   if (!reviewQueue.length) {
     document.getElementById('reviewEmpty').classList.remove('hidden');
@@ -1049,19 +1095,78 @@ function showNextReviewCard() {
   currentReviewCard = reviewQueue[0];
   document.getElementById('reviewRemaining').textContent = reviewQueue.length;
   document.getElementById('clozeSentence').innerHTML = renderClozeText(currentReviewCard);
+
+  // 依熟練度切換測驗方式；選擇題湊不出誘答選項時退回打字
+  const options = getReviewStage(currentReviewCard) === 'choice'
+    ? buildChoiceOptions(currentReviewCard)
+    : null;
+  const stageTag = document.getElementById('reviewStageTag');
+  const choiceArea = document.getElementById('choiceAnswerArea');
+  const typeArea = document.getElementById('typeAnswerArea');
+
+  if (options) {
+    stageTag.textContent = ' · 選擇';
+    choiceArea.classList.remove('hidden');
+    typeArea.classList.add('hidden');
+    renderChoiceButtons(options);
+  } else {
+    stageTag.textContent = ' · 拼寫';
+    choiceArea.classList.add('hidden');
+    typeArea.classList.remove('hidden');
+    setTimeout(() => document.getElementById('answerInput').focus(), 50);
+  }
+}
+
+function renderChoiceButtons(options) {
+  const grid = document.getElementById('choiceGrid');
+  grid.innerHTML = '';
+  options.forEach((word) => {
+    const btn = document.createElement('button');
+    btn.className = 'btn-quiet py-3 px-2 rounded-lg text-base break-words';
+    btn.textContent = word;
+    btn.addEventListener('click', () => {
+      const correct = (currentReviewCard.word || '').trim().toLowerCase();
+      revealAnswer(word.trim().toLowerCase() === correct);
+    });
+    grid.appendChild(btn);
+  });
 }
 
 document.getElementById('goReviewBtn').addEventListener('click', () => switchPage('review'));
 
-document.getElementById('showAnswerBtn').addEventListener('click', () => {
+// 打字克漏字：比對前先去除頭尾空白、大小寫差異，避免大小寫誤判為錯
+function revealAnswer(isCorrect) {
   if (!currentReviewCard) return;
+  const judgeEl = document.getElementById('answerJudge');
+  if (isCorrect === null) {
+    judgeEl.classList.add('hidden');
+  } else {
+    judgeEl.classList.remove('hidden');
+    judgeEl.textContent = isCorrect ? '✓ 答對了' : '✗ 答錯了，正確答案如下';
+    judgeEl.className = `text-sm font-bold ${isCorrect ? 'text-sage' : 'text-red-400'}`;
+  }
   document.getElementById('revealWord').textContent = currentReviewCard.word;
   document.getElementById('revealPhonetic').textContent = currentReviewCard.phonetic || '';
   document.getElementById('revealMeaning').textContent = currentReviewCard.zhDefinition || '（無翻譯記錄）';
   document.getElementById('revealSentenceZh').textContent = currentReviewCard.sentenceZh || '';
   document.getElementById('revealArea').classList.remove('hidden');
-  document.getElementById('showAnswerBtn').classList.add('hidden');
+  document.getElementById('typeAnswerArea').classList.add('hidden');
+  document.getElementById('choiceAnswerArea').classList.add('hidden');
+}
+
+document.getElementById('checkAnswerBtn').addEventListener('click', () => {
+  if (!currentReviewCard) return;
+  const typed = document.getElementById('answerInput').value.trim().toLowerCase();
+  const correct = (currentReviewCard.word || '').trim().toLowerCase();
+  revealAnswer(typed.length > 0 && typed === correct);
 });
+
+document.getElementById('answerInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') document.getElementById('checkAnswerBtn').click();
+});
+
+document.getElementById('skipAnswerBtn').addEventListener('click', () => revealAnswer(null));
+document.getElementById('skipChoiceBtn').addEventListener('click', () => revealAnswer(null));
 
 document.getElementById('speakBtn').addEventListener('click', () => {
   if (currentReviewCard) speakSentence(currentReviewCard.sentence);
