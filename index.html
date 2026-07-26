@@ -602,17 +602,33 @@ function buildSentenceBlock(sentence, highlightSuggested) {
 
   const tokens = sentence.split(/(\s+)/);
   let tokenIndex = 0;
+  // 逐 token 抓出裡面所有連續字母（含撇號），標點/連字號留在原位當純文字，
+  // 這樣「commenced.」「"This」「sci-fi」裡的字都能被抓出來變成可點字
+  const wordRe = /[A-Za-z]+(?:'[A-Za-z]+)?/g;
   tokens.forEach((token) => {
-    if (/^[A-Za-z]+(?:'[A-Za-z]+)?$/.test(token)) {
+    let lastIndex = 0;
+    let match;
+    let matched = false;
+    wordRe.lastIndex = 0;
+    while ((match = wordRe.exec(token)) !== null) {
+      matched = true;
+      if (match.index > lastIndex) {
+        sentenceBlock.appendChild(document.createTextNode(token.slice(lastIndex, match.index)));
+      }
+      const word = match[0];
       const span = document.createElement('span');
-      const suggested = highlightSuggested && isSuggestedWord(token);
+      const suggested = highlightSuggested && isSuggestedWord(word);
       span.className = suggested ? 'word-token quickadd-suggested' : 'word-token';
-      span.textContent = token;
+      span.textContent = word;
       span.dataset.tokenIndex = tokenIndex++;
       span.addEventListener('click', (e) => onWordClick(span, sentence, sentenceBlock, e.shiftKey));
       sentenceBlock.appendChild(span);
-    } else {
+      lastIndex = wordRe.lastIndex;
+    }
+    if (!matched) {
       sentenceBlock.appendChild(document.createTextNode(token));
+    } else if (lastIndex < token.length) {
+      sentenceBlock.appendChild(document.createTextNode(token.slice(lastIndex)));
     }
   });
   return sentenceBlock;
