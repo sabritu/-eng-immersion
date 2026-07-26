@@ -1617,6 +1617,20 @@ async function init() {
   }
 }
 
+// Android 分享文字給已經開著的 PWA 時，系統常是把畫面從「返回前進快取」
+// (bfcache) 原地喚醒，不是真的重新載入頁面：網址列雖然換成新的分享網址，
+// 但頁面裡的程式碼完全不會重新跑一次，所以第二次之後分享永遠停在原地不動。
+// pageshow 事件搭配 event.persisted 專門用來偵測這種情況，一偵測到就手動
+// 重新解析網址參數、把新分享進來的文字帶進快速建卡。
+window.addEventListener('pageshow', (event) => {
+  if (!event.persisted) return;
+  parseUrlText();
+  if (pendingQuickAddText) {
+    renderQuickAdd(pendingQuickAddText);
+    switchPage('quickadd');
+  }
+});
+
 init();
 </script>
 </body>
