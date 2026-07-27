@@ -136,57 +136,65 @@
       </div>
 
       <!-- 進度條就是長頸鹿的身體：三段熟練度依比例上色，斑紋只長在「已記住」那段 -->
-      <svg id="giraffeChart" viewBox="0 0 320 116" class="w-full" role="img" aria-labelledby="giraffeChartTitle">
+      <svg id="giraffeChart" viewBox="0 0 250 118" class="w-full" role="img" aria-labelledby="giraffeChartTitle">
         <title id="giraffeChartTitle">記憶進度長頸鹿</title>
         <defs>
-          <pattern id="giraffeSpots" width="13" height="13" patternUnits="userSpaceOnUse">
-            <rect width="13" height="13" fill="#d9a253"/>
-            <circle cx="3.5" cy="3.5" r="2.4" fill="#a6702c" opacity="0.5"/>
-            <circle cx="10" cy="9.5" r="2" fill="#a6702c" opacity="0.5"/>
+          <!-- 小 G 的斑點：稀疏、大顆、圓形，不是真長頸鹿那種密集網格 -->
+          <pattern id="giraffeSpots" width="30" height="30" patternUnits="userSpaceOnUse">
+            <rect width="30" height="30" fill="#d9a253"/>
+            <ellipse cx="8" cy="9" rx="5.5" ry="4.8" fill="#a6702c" opacity="0.5"/>
+            <ellipse cx="23" cy="22" rx="4.8" ry="5.2" fill="#a6702c" opacity="0.5"/>
           </pattern>
-          <clipPath id="bodyClip">
-            <rect x="4" y="56" width="228" height="24" rx="12"/>
-          </clipPath>
+          <!-- 身體與脖子是連續的一段，用一條粗線描出輪廓再當遮罩，
+               三段進度色才能沿著這個形狀由左往右填 -->
+          <mask id="giraffeBodyMask">
+            <path d="M36 82 L112 82 Q146 82 152 54 L156 40"
+              stroke="#fff" stroke-width="44" fill="none" stroke-linecap="round"/>
+          </mask>
         </defs>
 
         <!-- 尾巴 -->
-        <path d="M6 60 Q-2 66 2 76" stroke="#3f5170" stroke-width="3" fill="none" stroke-linecap="round"/>
+        <path d="M20 76 Q8 82 12 94" stroke="#a6702c" stroke-width="3.5" fill="none" stroke-linecap="round"/>
+        <circle cx="12" cy="95" r="3.5" fill="#a6702c"/>
 
-        <!-- 四隻腳：細長才有長頸鹿的味道 -->
-        <g stroke="#3f5170" stroke-width="6" stroke-linecap="round">
-          <path d="M34 78 L30 108"/>
-          <path d="M62 78 L60 108"/>
-          <path d="M182 78 L184 108"/>
-          <path d="M212 78 L216 108"/>
+        <!-- 四隻短腿：小 G 是圓潤討喜的比例，不是真長頸鹿的細長腿 -->
+        <g stroke="#c9903f" stroke-width="13" stroke-linecap="round">
+          <path d="M50 98 L48 110"/>
+          <path d="M76 100 L75 112"/>
+          <path d="M112 100 L113 112"/>
+          <path d="M136 96 L139 108"/>
         </g>
 
-        <!-- 脖子：長頸鹿的辨識度幾乎全在這裡，拉高拉長才不會看起來像毛毛蟲 -->
-        <path d="M226 62 Q248 56 262 20" stroke="#3f5170" stroke-width="17" fill="none" stroke-linecap="round"/>
-        <path d="M226 62 Q248 56 262 20" stroke="url(#giraffeSpots)" stroke-width="13" fill="none" stroke-linecap="round"/>
+        <!-- 身體＋脖子的外框，讓形狀在深色底上有邊界 -->
+        <path d="M36 82 L112 82 Q146 82 152 54 L156 40"
+          stroke="#a6702c" stroke-width="48" fill="none" stroke-linecap="round" opacity="0.45"/>
 
-        <!-- 鬃毛 -->
-        <path d="M232 54 Q246 46 256 18" stroke="#a6702c" stroke-width="3" fill="none" stroke-linecap="round" opacity="0.7"/>
-
-        <!-- 頭與口鼻 -->
-        <ellipse cx="268" cy="14" rx="15" ry="10" transform="rotate(-14 268 14)" fill="url(#giraffeSpots)" stroke="#3f5170" stroke-width="1.5"/>
-        <ellipse cx="281" cy="10" rx="6" ry="5" transform="rotate(-14 281 10)" fill="#c99a5e" stroke="#3f5170" stroke-width="1.2"/>
-        <circle cx="285" cy="9" r="1.1" fill="#1a263c"/>
-        <circle cx="266" cy="10" r="1.8" fill="#1a263c"/>
-        <!-- 耳朵與角 -->
-        <ellipse cx="255" cy="12" rx="6" ry="3.5" transform="rotate(-38 255 12)" fill="#c99a5e" stroke="#3f5170" stroke-width="1.2"/>
-        <path d="M262 6 L260 -1" stroke="#a6702c" stroke-width="2.5" stroke-linecap="round"/>
-        <circle cx="260" cy="-2" r="2.2" fill="#a6702c"/>
-        <path d="M270 4 L270 -3" stroke="#a6702c" stroke-width="2.5" stroke-linecap="round"/>
-        <circle cx="270" cy="-4" r="2.2" fill="#a6702c"/>
-
-        <!-- 身體：就是進度條本身，三段依熟練度比例上色 -->
-        <rect x="4" y="56" width="228" height="24" rx="12" fill="#283a58" stroke="#3f5170" stroke-width="1.5"/>
-        <g clip-path="url(#bodyClip)">
-          <rect id="segMature" x="4" y="56" width="0" height="24" fill="url(#giraffeSpots)"/>
-          <rect id="segYoung" x="4" y="56" width="0" height="24" fill="#8ca083"/>
-          <rect id="segNew" x="4" y="56" width="0" height="24" fill="#4a5a78"/>
+        <!-- 三段進度：由遮罩裁成身體＋脖子的形狀 -->
+        <g mask="url(#giraffeBodyMask)">
+          <rect x="0" y="0" width="250" height="118" fill="#283a58"/>
+          <rect id="segMature" x="12" y="0" width="0" height="118" fill="url(#giraffeSpots)"/>
+          <rect id="segYoung" x="12" y="0" width="0" height="118" fill="#8ca083"/>
+          <rect id="segNew" x="12" y="0" width="0" height="118" fill="#4a5a78"/>
         </g>
-        <rect x="4" y="56" width="228" height="24" rx="12" fill="none" stroke="#3f5170" stroke-width="1.5"/>
+
+        <!-- 頭：小 G 的頭佔比大，跟脖子直接連成一體 -->
+        <ellipse cx="168" cy="30" rx="30" ry="26" fill="url(#giraffeSpots)" stroke="#a6702c" stroke-width="2"/>
+        <!-- 兩根圓球角 -->
+        <path d="M156 8 L152 -3" stroke="#c9903f" stroke-width="4.5" stroke-linecap="round"/>
+        <circle cx="151" cy="-5" r="5" fill="#c9903f" stroke="#a6702c" stroke-width="1.5"/>
+        <path d="M180 8 L184 -3" stroke="#c9903f" stroke-width="4.5" stroke-linecap="round"/>
+        <circle cx="185" cy="-5" r="5" fill="#c9903f" stroke="#a6702c" stroke-width="1.5"/>
+        <!-- 耳朵 -->
+        <ellipse cx="142" cy="20" rx="9.5" ry="5.5" transform="rotate(-30 142 20)" fill="#e8c48a" stroke="#a6702c" stroke-width="1.5"/>
+        <ellipse cx="194" cy="20" rx="9.5" ry="5.5" transform="rotate(30 194 20)" fill="#e8c48a" stroke="#a6702c" stroke-width="1.5"/>
+        <!-- 口鼻與腮紅 -->
+        <ellipse cx="168" cy="42" rx="16" ry="11" fill="#f0dcb4" opacity="0.9"/>
+        <ellipse cx="146" cy="37" rx="6" ry="4" fill="#e89a9a" opacity="0.6"/>
+        <ellipse cx="190" cy="37" rx="6" ry="4" fill="#e89a9a" opacity="0.6"/>
+        <!-- 笑瞇瞇的眼睛 -->
+        <path d="M154 26 Q158 21 162 26" stroke="#6b4518" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+        <path d="M175 26 Q179 21 183 26" stroke="#6b4518" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+        <path d="M163 41 Q168 46 173 41" stroke="#6b4518" stroke-width="2.2" fill="none" stroke-linecap="round"/>
       </svg>
 
       <div class="flex flex-wrap gap-x-4 gap-y-1 text-xs">
@@ -1843,8 +1851,9 @@ function renderDashboard() {
 // 記憶進度長頸鹿：身體＝三段熟練度的比例，斑紋只長在「已記住」那段。
 // 分級標準跟字卡詳細頁的 getMasteryTier 同一套（Anki 的 21 天成熟卡標準），
 // 兩邊要一致，不然使用者會看到互相矛盾的說法。
-const GIRAFFE_BODY_X = 4;
-const GIRAFFE_BODY_WIDTH = 228;
+// 進度填色的範圍要涵蓋整個遮罩形狀（身體最左端到脖子最右端）
+const GIRAFFE_BODY_X = 12;
+const GIRAFFE_BODY_WIDTH = 168;
 
 function renderMasteryChart() {
   const active = CARDS.filter((c) => c.status === 'active');
