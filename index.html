@@ -182,14 +182,23 @@
       <p>目前沒有待複習的字卡</p>
     </div>
     <div id="reviewCard" class="hidden specimen-card p-5 space-y-4">
-      <p class="specimen-tag">剩餘 <span id="reviewRemaining">0</span> 張<span id="reviewStageTag" class="text-muted"></span></p>
+      <div class="flex items-center justify-between gap-2">
+        <p class="specimen-tag">剩餘 <span id="reviewRemaining">0</span> 張<span id="reviewStageTag" class="text-muted"></span></p>
+        <button id="undoScoreBtn" class="hidden text-xs text-amber hover:text-paper underline shrink-0">復原上一次評分</button>
+      </div>
 
       <div class="flip-card">
         <p id="clozeSentence" class="text-xl leading-9 font-serif text-paper break-words whitespace-normal"></p>
-        <button id="speakBtn" class="btn-quiet text-sm px-3 py-2 rounded-lg mt-4 flex items-center gap-2">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4V5Z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/></svg>
-          播放語音
-        </button>
+        <div class="flex flex-wrap gap-2 mt-4">
+          <button id="speakBtn" class="btn-quiet text-sm px-3 py-2 rounded-lg flex items-center gap-2">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4V5Z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/></svg>
+            播放語音
+          </button>
+          <button id="deferCardBtn" class="btn-quiet text-sm px-3 py-2 rounded-lg flex items-center gap-2">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5v14l9-7-9-7Z"/><path d="M15 5v14l5-7-5-7Z"/></svg>
+            等一下再說
+          </button>
+        </div>
 
         <!-- 第一階段：四選一（reps 0–1，新卡或剛答錯被打回的卡） -->
         <div id="choiceAnswerArea" class="hidden mt-4 space-y-2">
@@ -1313,6 +1322,8 @@ let currentReviewCard = null;
 
 function startReview() {
   reviewQueue = getDueCards();
+  lastScoreUndo = null;
+  document.getElementById('undoScoreBtn').classList.add('hidden');
   showNextReviewCard();
 }
 
@@ -1412,15 +1423,55 @@ document.getElementById('speakBtn').addEventListener('click', () => {
   speakSentence(answered ? currentReviewCard.sentence : buildMutedSentence(currentReviewCard));
 });
 
+// 單層復原：只記最近一次評分，記下卡片評分前的完整狀態，
+// 手滑按錯分數時能救回來；再評下一張就會蓋掉，不做多層歷史。
+let lastScoreUndo = null;
+
 document.querySelectorAll('.score-btn').forEach((btn) => {
   btn.addEventListener('click', () => {
     if (!currentReviewCard) return;
     const quality = Number(btn.dataset.score);
-    sm2Update(currentReviewCard, quality);
+    const card = currentReviewCard;
+    lastScoreUndo = {
+      card,
+      reps: card.reps,
+      interval: card.interval,
+      dueDate: card.dueDate,
+      ef: card.ef,
+      lastReviewed: card.lastReviewed
+    };
+    sm2Update(card, quality);
     persist();
     reviewQueue.shift();
+    document.getElementById('undoScoreBtn').classList.remove('hidden');
     showNextReviewCard();
   });
+});
+
+document.getElementById('undoScoreBtn').addEventListener('click', () => {
+  if (!lastScoreUndo) return;
+  const { card, reps, interval, dueDate, ef, lastReviewed } = lastScoreUndo;
+  card.reps = reps;
+  card.interval = interval;
+  card.dueDate = dueDate;
+  card.ef = ef;
+  card.lastReviewed = lastReviewed;
+  persist();
+  reviewQueue.unshift(card);
+  lastScoreUndo = null;
+  document.getElementById('undoScoreBtn').classList.add('hidden');
+  showNextReviewCard();
+  toast('已復原上一次評分');
+});
+
+document.getElementById('deferCardBtn').addEventListener('click', () => {
+  if (reviewQueue.length <= 1) {
+    toast('只剩這張了，沒有其他張可以先跳過');
+    return;
+  }
+  const card = reviewQueue.shift();
+  reviewQueue.push(card);
+  showNextReviewCard();
 });
 
 /* =========================================================
