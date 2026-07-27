@@ -247,9 +247,13 @@
         <button id="copyJsonBtn" class="btn-quiet flex-1 py-2.5 rounded-lg text-sm">複製到剪貼簿</button>
         <button id="downloadJsonBtn" class="btn-quiet flex-1 py-2.5 rounded-lg text-sm">下載 .json</button>
       </div>
+      <button id="downloadCsvBtn" class="btn-quiet w-full py-2.5 rounded-lg text-sm">下載 .csv（可用 Excel／試算表開啟）</button>
     </div>
     <div class="specimen-card p-4 space-y-3">
       <p class="specimen-tag">還原</p>
+      <button id="importFileBtn" class="btn-quiet w-full py-2.5 rounded-lg text-sm">選擇 JSON 檔案</button>
+      <input id="importFileInput" type="file" accept="application/json,.json" class="hidden">
+      <p class="text-xs text-muted">或貼上 JSON 內容：</p>
       <textarea id="importInput" rows="4" placeholder="貼上匯出的 JSON…" class="w-full bg-surface2 border border-hair rounded-lg p-3 text-sm outline-none resize-none placeholder:text-muted"></textarea>
       <div class="flex gap-2">
         <button id="mergeBtn" class="btn-quiet flex-1 py-2.5 rounded-lg text-sm">合併</button>
@@ -339,7 +343,12 @@
     <p id="modalStatus" class="text-xs text-muted"></p>
     <div>
       <label class="specimen-tag">單字</label>
-      <input id="modalWord" type="text" class="w-full bg-surface2 border border-hair rounded-lg p-2 text-sm mt-1 font-serif">
+      <div class="flex gap-2 items-center mt-1">
+        <input id="modalWord" type="text" class="flex-1 bg-surface2 border border-hair rounded-lg p-2 text-sm font-serif">
+        <button id="modalSpeakBtn" type="button" title="播放發音" class="btn-quiet px-3 py-2 rounded-lg shrink-0">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4V5Z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/></svg>
+        </button>
+      </div>
     </div>
     <div>
       <label class="specimen-tag">音標</label>
@@ -535,24 +544,91 @@ function dedupeSentences(sentences) {
   return kept.length ? kept : sentences; // 防呆：萬一全部被判成重複，寧可照原樣顯示也不要開天窗
 }
 
+// 自動過濾（網址／重複句）不可能百分之百準，所以每個容器（快速建卡／文字採集）
+// 都保留一份「目前顯示中的句子清單」狀態，讓使用者能自己刪掉或改掉漏網的句子，
+// 而不用整段重新分享/貼上一次。sentenceListState 用容器 id 當 key 隔開兩邊互不影響。
+const sentenceListState = {};
+const editingSentenceIndex = {};
+
 function renderClickableText(rawText, containerId) {
+  sentenceListState[containerId] = dedupeSentences(splitSentences(stripUrls(rawText)));
+  editingSentenceIndex[containerId] = -1;
+  renderSentenceBlocks(containerId);
+}
+
+function renderSentenceBlocks(containerId) {
   const container = document.getElementById(containerId);
   container.innerHTML = '';
   lastClickedToken = null;
-  const sentences = dedupeSentences(splitSentences(stripUrls(rawText)));
+  const sentences = sentenceListState[containerId] || [];
 
   if (!sentences.length) {
     container.innerHTML = '<p class="text-center text-muted text-sm py-8">貼上文字後會顯示在這裡</p>';
     return;
   }
 
-  sentences.forEach((sentence) => {
+  sentences.forEach((sentence, index) => {
     const block = document.createElement('div');
-    block.className = 'specimen-card p-3';
-    const p = document.createElement('p');
-    p.className = 'leading-7 text-paper break-words';
-    p.appendChild(buildSentenceBlock(sentence, true));
-    block.appendChild(p);
+    block.className = 'specimen-card p-3 space-y-2';
+
+    const toolbar = document.createElement('div');
+    toolbar.className = 'flex justify-end gap-3 text-xs text-muted';
+
+    const isEditing = editingSentenceIndex[containerId] === index;
+
+    if (isEditing) {
+      const textarea = document.createElement('textarea');
+      textarea.rows = 3;
+      textarea.value = sentence;
+      textarea.className = 'w-full bg-surface2 border border-hair rounded-lg p-2 text-sm resize-none';
+      block.appendChild(textarea);
+
+      const editBar = document.createElement('div');
+      editBar.className = 'flex justify-end gap-3 text-xs';
+      const saveBtn = document.createElement('button');
+      saveBtn.textContent = '儲存';
+      saveBtn.className = 'text-amber font-bold';
+      saveBtn.addEventListener('click', () => {
+        const newText = textarea.value.trim();
+        if (newText) sentenceListState[containerId][index] = newText;
+        editingSentenceIndex[containerId] = -1;
+        renderSentenceBlocks(containerId);
+      });
+      const cancelBtn = document.createElement('button');
+      cancelBtn.textContent = '取消';
+      cancelBtn.className = 'text-muted';
+      cancelBtn.addEventListener('click', () => {
+        editingSentenceIndex[containerId] = -1;
+        renderSentenceBlocks(containerId);
+      });
+      editBar.appendChild(cancelBtn);
+      editBar.appendChild(saveBtn);
+      block.appendChild(editBar);
+    } else {
+      const editBtn = document.createElement('button');
+      editBtn.textContent = '編輯';
+      editBtn.className = 'hover:text-amber';
+      editBtn.addEventListener('click', () => {
+        editingSentenceIndex[containerId] = index;
+        renderSentenceBlocks(containerId);
+      });
+      const deleteBtn = document.createElement('button');
+      deleteBtn.textContent = '刪除';
+      deleteBtn.className = 'hover:text-red-400';
+      deleteBtn.addEventListener('click', () => {
+        sentenceListState[containerId].splice(index, 1);
+        renderSentenceBlocks(containerId);
+      });
+      toolbar.appendChild(editBtn);
+      toolbar.appendChild(deleteBtn);
+      block.appendChild(toolbar);
+
+      const p = document.createElement('p');
+      p.className = 'leading-7 text-paper break-words';
+      p.appendChild(buildSentenceBlock(sentence, true));
+      block.appendChild(p);
+    }
+
     container.appendChild(block);
   });
 }
@@ -945,6 +1021,11 @@ document.getElementById('closeModalBtn').addEventListener('click', () => {
   document.getElementById('lookupModal').classList.add('hidden');
 });
 
+document.getElementById('modalSpeakBtn').addEventListener('click', () => {
+  const word = document.getElementById('modalWord').value.trim();
+  if (word) speakSentence(word);
+});
+
 document.getElementById('modalSaveBtn').addEventListener('click', () => {
   const word = document.getElementById('modalWord').value.trim().toLowerCase();
   if (!word) return;
@@ -1054,6 +1135,17 @@ function renderClozeText(card) {
     return card.sentence.replace(re, '<span class="cloze-blank">______</span>');
   }
   return card.sentence + ' <span class="cloze-blank">______</span>';
+}
+
+// 作答前朗讀語境句時，把目標單字換成停頓，避免「播放語音」變成選擇題的送分題；
+// 換成刪節號讓大部分 TTS 引擎唸出一個短暫停頓，聽感接近「這裡有個空格」
+function buildMutedSentence(card) {
+  const escaped = card.word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const re = new RegExp(`\\b${escaped}\\b`, 'i');
+  if (re.test(card.sentence)) {
+    return card.sentence.replace(re, '...');
+  }
+  return card.sentence;
 }
 
 // 內建語音品質參差不齊，依關鍵字優先挑選聽起來自然的神經網路語音（Edge/Windows/Chrome 常見命名）
@@ -1222,7 +1314,9 @@ document.getElementById('skipAnswerBtn').addEventListener('click', () => revealA
 document.getElementById('skipChoiceBtn').addEventListener('click', () => revealAnswer(null));
 
 document.getElementById('speakBtn').addEventListener('click', () => {
-  if (currentReviewCard) speakSentence(currentReviewCard.sentence);
+  if (!currentReviewCard) return;
+  const answered = !document.getElementById('revealArea').classList.contains('hidden');
+  speakSentence(answered ? currentReviewCard.sentence : buildMutedSentence(currentReviewCard));
 });
 
 document.querySelectorAll('.score-btn').forEach((btn) => {
@@ -1339,6 +1433,46 @@ document.getElementById('downloadJsonBtn').addEventListener('click', () => {
   a.download = `english-cards-${todayISO()}.json`;
   a.click();
   URL.revokeObjectURL(url);
+});
+
+// CSV 逐欄位跳脫：含逗號、引號、換行的欄位要用雙引號包起來，欄位裡的雙引號要變成兩個雙引號
+function csvField(value) {
+  const s = String(value ?? '');
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+document.getElementById('downloadCsvBtn').addEventListener('click', () => {
+  const headers = ['單字', '音標', '中文翻譯', '語境句', '語境句中文翻譯', '狀態', '下次複習日', '複習次數', '建立時間'];
+  const rows = CARDS.map((c) => [
+    c.word, c.phonetic, c.zhDefinition, c.sentence, c.sentenceZh,
+    c.status === 'active' ? '複習中' : '待處理', c.dueDate, c.reps || 0, c.createdAt
+  ]);
+  // 開頭加 UTF-8 BOM，Excel 開啟中文才不會變亂碼
+  const csv = '﻿' + [headers, ...rows].map((row) => row.map(csvField).join(',')).join('\r\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `english-cards-${todayISO()}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+});
+
+document.getElementById('importFileBtn').addEventListener('click', () => {
+  document.getElementById('importFileInput').click();
+});
+
+document.getElementById('importFileInput').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  try {
+    const text = await file.text();
+    document.getElementById('importInput').value = text;
+    toast('已載入檔案內容，請按下方「合併」或「完全覆蓋」');
+  } catch (err) {
+    toast('讀取檔案失敗');
+  }
+  e.target.value = ''; // 清空，允許重複選同一個檔案
 });
 
 function validateImportedCards(data) {
@@ -1473,7 +1607,12 @@ function renderManageList() {
         <input type="checkbox" class="manage-checkbox mt-1" ${manageSelected.has(card.id) ? 'checked' : ''}>
         <div class="min-w-0 flex-1">
           <div class="flex items-baseline justify-between gap-2">
-            <p class="font-serif text-paper">${escapeHtml(card.word)}</p>
+            <span class="flex items-center gap-1.5">
+              <p class="font-serif text-paper">${escapeHtml(card.word)}</p>
+              <button class="manage-speak-btn text-muted hover:text-amber shrink-0" title="播放發音">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4V5Z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/></svg>
+              </button>
+            </span>
             <span class="specimen-tag shrink-0">${card.status === 'active' ? '複習中' : '待處理'}</span>
           </div>
           <p class="text-sm text-muted">${escapeHtml(card.zhDefinition || '（無翻譯）')}</p>
@@ -1496,6 +1635,11 @@ function renderManageList() {
     // 語境句預設兩行截斷，點擊展開/收合完整內容
     row.querySelector('.sentence-preview').addEventListener('click', (e) => {
       e.target.classList.toggle('line-clamp-2');
+    });
+
+    row.querySelector('.manage-speak-btn').addEventListener('click', (e) => {
+      e.stopPropagation();
+      speakSentence(card.word);
     });
 
     container.appendChild(row);
