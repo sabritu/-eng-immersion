@@ -263,11 +263,12 @@
     </div>
     <div class="specimen-card p-4 space-y-3">
       <p class="specimen-tag">LINE 到期提醒（選用）</p>
-      <p class="text-xs text-muted">部署好 Worker 後，把網址跟同步密碼貼在這裡，App 才會自動把「下次到期日」同步過去。詳見 README「5. LINE 到期提醒」。</p>
-      <input id="lineWorkerUrlInput" type="text" placeholder="Worker 網址，例如 https://xxx.workers.dev" class="w-full bg-surface2 border border-hair rounded-lg p-3 text-sm outline-none placeholder:text-muted">
-      <input id="lineSyncSecretInput" type="text" placeholder="同步密碼（跟 Worker 設定的 SYNC_SECRET 一致）" class="w-full bg-surface2 border border-hair rounded-lg p-3 text-sm outline-none placeholder:text-muted">
-      <button id="saveLineSettingsBtn" class="btn-quiet w-full py-2.5 rounded-lg text-sm">儲存</button>
-      <p id="lineSettingsStatus" class="text-xs text-muted"></p>
+      <p class="text-xs text-muted">綁定後，有字卡到期的那天會收到 LINE 通知；沒到期就不會打擾你。</p>
+      <p id="linePairStatus" class="text-sm">尚未綁定</p>
+      <button id="lineAddFriendBtn" class="btn-quiet w-full py-2.5 rounded-lg text-sm">① 加「英英美代誌」好友</button>
+      <button id="linePairBtn" class="btn-quiet w-full py-2.5 rounded-lg text-sm">② 開啟 LINE 送出綁定碼</button>
+      <button id="lineCheckPairBtn" class="btn-quiet w-full py-2.5 rounded-lg text-sm">③ 我送出了，檢查綁定結果</button>
+      <p class="text-xs text-muted">你的綁定碼：<span id="linePairCode" class="text-paper">—</span></p>
     </div>
     <div class="pt-2 text-center text-xs text-muted space-y-1">
       <p><a href="./guide.html" target="_blank" rel="noopener" class="hover:text-paper">使用手冊</a></p>
@@ -1404,44 +1405,92 @@ function getNextDueDate() {
   return activeCards.reduce((min, c) => (c.dueDate < min ? c.dueDate : min), activeCards[0].dueDate);
 }
 
-// 把下次到期日同步給 LINE 提醒 Worker（選用功能，未設定網址時靜默跳過）
+// LINE 提醒相關設定：使用者不需要知道也不需要填，全部寫死在這裡
+const LINE_WORKER_URL = 'https://line-due-reminder.sweet4976.workers.dev';
+const LINE_OA_ID = '@548ixlun';
+// 字母表排除 0/O、1/I/L 這類長得很像的字元，使用者要用眼睛核對時比較不會看錯
+const PAIR_CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+
+// 每台裝置一組配對碼，第一次要用時才產生，之後固定不變
+function getOrCreatePairCode() {
+  const settings = loadSettings();
+  if (settings.linePairCode) return settings.linePairCode;
+  const bytes = crypto.getRandomValues(new Uint8Array(6));
+  const code = Array.from(bytes, (b) => PAIR_CODE_ALPHABET[b % PAIR_CODE_ALPHABET.length]).join('');
+  settings.linePairCode = code;
+  saveSettings(settings);
+  return code;
+}
+
+// 把下次到期日同步給 LINE 提醒 Worker（沒綁定過就不用浪費一次連線）
 async function syncDueDateToLine() {
   const settings = loadSettings();
-  if (!settings.lineWorkerUrl) return;
+  if (!settings.linePaired || !settings.linePairCode) return;
   const dueDate = getNextDueDate();
   if (!dueDate) return;
   try {
-    const base = settings.lineWorkerUrl.replace(/\/+$/, '');
-    await fetch(`${base}/sync-due`, {
+    await fetch(`${LINE_WORKER_URL}/sync-due`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-sync-secret': settings.lineSyncSecret || '' },
-      body: JSON.stringify({ dueDate })
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: settings.linePairCode, dueDate })
     });
   } catch (e) {
-    // 離線或 Worker 未部署時靜默失敗，不影響 App 正常使用
+    // 離線時靜默失敗，不影響 App 正常使用
   }
 }
 
-(function initLineSettingsForm() {
-  const urlInput = document.getElementById('lineWorkerUrlInput');
-  const secretInput = document.getElementById('lineSyncSecretInput');
-  const status = document.getElementById('lineSettingsStatus');
-  const saveBtn = document.getElementById('saveLineSettingsBtn');
-  if (!saveBtn) return;
+(function initLinePairing() {
+  const statusEl = document.getElementById('linePairStatus');
+  const codeEl = document.getElementById('linePairCode');
+  const addFriendBtn = document.getElementById('lineAddFriendBtn');
+  const pairBtn = document.getElementById('linePairBtn');
+  const checkBtn = document.getElementById('lineCheckPairBtn');
+  if (!pairBtn) return;
 
-  const settings = loadSettings();
-  if (settings.lineWorkerUrl) urlInput.value = settings.lineWorkerUrl;
-  if (settings.lineSyncSecret) secretInput.value = settings.lineSyncSecret;
+  function renderStatus() {
+    const settings = loadSettings();
+    codeEl.textContent = settings.linePairCode || '—';
+    statusEl.textContent = settings.linePaired ? '已綁定，有字卡到期時會收到 LINE 通知' : '尚未綁定';
+    statusEl.className = settings.linePaired ? 'text-sm text-paper' : 'text-sm text-muted';
+  }
 
-  saveBtn.addEventListener('click', () => {
-    const s = loadSettings();
-    s.lineWorkerUrl = urlInput.value.trim();
-    s.lineSyncSecret = secretInput.value.trim();
-    saveSettings(s);
-    status.textContent = '已儲存';
-    toast('已儲存 LINE 提醒設定');
-    syncDueDateToLine();
+  addFriendBtn.addEventListener('click', () => {
+    window.open(`https://line.me/R/ti/p/${encodeURIComponent(LINE_OA_ID)}`, '_blank', 'noopener');
   });
+
+  // 直接開好聊天室並把綁定碼填進輸入框，使用者只要按送出
+  pairBtn.addEventListener('click', () => {
+    const code = getOrCreatePairCode();
+    renderStatus();
+    const message = encodeURIComponent(`綁定 ${code}`);
+    window.open(`https://line.me/R/oaMessage/${encodeURIComponent(LINE_OA_ID)}/?${message}`, '_blank', 'noopener');
+  });
+
+  checkBtn.addEventListener('click', async () => {
+    const settings = loadSettings();
+    if (!settings.linePairCode) {
+      toast('請先按上面的按鈕送出綁定碼');
+      return;
+    }
+    try {
+      const res = await fetch(`${LINE_WORKER_URL}/pair-status?code=${encodeURIComponent(settings.linePairCode)}`);
+      const data = await res.json();
+      if (data.paired) {
+        const s = loadSettings();
+        s.linePaired = true;
+        saveSettings(s);
+        renderStatus();
+        toast('綁定成功');
+        syncDueDateToLine();
+      } else {
+        toast('還沒收到綁定碼，請確認 LINE 訊息已送出');
+      }
+    } catch (e) {
+      toast('查詢失敗，請確認網路連線');
+    }
+  });
+
+  renderStatus();
 })();
 
 document.getElementById('requestNotifyBtn').addEventListener('click', async () => {
