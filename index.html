@@ -124,15 +124,9 @@
       <button id="goReviewBtn" class="btn-primary mt-5 w-full py-3 rounded-lg">開始複習</button>
     </div>
 
-    <div class="grid grid-cols-2 gap-3">
-      <div class="specimen-card p-4">
-        <p class="specimen-tag mb-2">待處理</p>
-        <p id="inboxCount" class="text-3xl font-serif text-paper">0</p>
-      </div>
-      <div class="specimen-card p-4">
-        <p class="specimen-tag mb-2">累計字卡</p>
-        <p id="totalCount" class="text-3xl font-serif text-paper">0</p>
-      </div>
+    <div class="specimen-card p-4">
+      <p class="specimen-tag mb-2">累計字卡</p>
+      <p id="totalCount" class="text-3xl font-serif text-paper">0</p>
     </div>
 
     <button id="goManageBtn" class="specimen-card w-full p-4 flex items-center justify-between text-left">
@@ -328,9 +322,24 @@
           <option value="inbox">待處理</option>
         </select>
       </div>
+      <div class="flex gap-1.5">
+        <button data-range="7" class="range-btn btn-quiet flex-1 py-1.5 rounded-lg text-xs">最近 7 天</button>
+        <button data-range="30" class="range-btn btn-quiet flex-1 py-1.5 rounded-lg text-xs">最近 30 天</button>
+        <button data-range="all" class="range-btn btn-quiet flex-1 py-1.5 rounded-lg text-xs">全部</button>
+      </div>
       <div class="grid grid-cols-2 gap-2">
-        <input id="manageDateFrom" type="date" class="w-full bg-surface2 border border-hair rounded-lg p-2 text-xs">
-        <input id="manageDateTo" type="date" class="w-full bg-surface2 border border-hair rounded-lg p-2 text-xs">
+        <label class="block">
+          <span class="specimen-tag">建立日期 從</span>
+          <input id="manageDateFrom" type="date" class="w-full bg-surface2 border border-hair rounded-lg p-2 text-xs mt-1">
+        </label>
+        <label class="block">
+          <span class="specimen-tag">到</span>
+          <input id="manageDateTo" type="date" class="w-full bg-surface2 border border-hair rounded-lg p-2 text-xs mt-1">
+        </label>
+      </div>
+      <div class="flex items-center justify-between gap-2 pt-1">
+        <p class="text-xs text-muted">符合 <span id="manageMatchCount" class="text-paper font-bold">0</span> 張</p>
+        <button id="manageClearFilterBtn" class="text-xs text-muted hover:text-paper underline">清除篩選</button>
       </div>
     </div>
 
@@ -817,11 +826,15 @@ document.getElementById('collectBtn').addEventListener('click', () => {
   renderClickableText(text, 'inboxList');
 });
 
-// 更新首頁「待處理」統計（僅供舊資料相容：新流程不再新增 inbox 狀態的字卡，
-// 舊的待處理字卡可以在「字卡管理」頁篩選狀態找到並處理）
-function renderInboxList() {
-  const list = CARDS.filter((c) => c.status === 'inbox');
-  document.getElementById('inboxCount').textContent = list.length;
+// 註：首頁原本有一格「待處理」統計，但自 v3 把採集流程改成「快速建卡」之後，
+// 就沒有任何路徑會產生 inbox 狀態的字卡了，那個數字永遠是 0。
+// 舊版留下的待處理字卡仍可在「字卡管理」頁用狀態篩選找到。
+
+// 來源字串長這樣：「單字查詢建卡．2026-07-27 14:32」。
+// 卡片列表只需要看到哪一天採集的，時分留給批次下拉選單——
+// 那裡需要時間才能區分同一天採集的不同批次。
+function stripSourceTime(source) {
+  return String(source || '').replace(/(\d{4}-\d{2}-\d{2})\s+\d{1,2}:\d{2}/, '$1');
 }
 
 function escapeHtml(str) {
@@ -1259,7 +1272,6 @@ document.getElementById('modalSaveBtn').addEventListener('click', () => {
     }));
   }
   persist();
-  renderInboxList();
   document.getElementById('lookupModal').classList.add('hidden');
   toast('已儲存字卡');
 });
@@ -1583,7 +1595,6 @@ document.getElementById('deferCardBtn').addEventListener('click', () => {
 function renderDashboard() {
   const due = getDueCards();
   document.getElementById('dueCount').textContent = due.length;
-  document.getElementById('inboxCount').textContent = CARDS.filter((c) => c.status === 'inbox').length;
   document.getElementById('totalCount').textContent = CARDS.filter((c) => c.status === 'active').length;
 
   const dot = document.getElementById('dueDot');
@@ -1942,7 +1953,6 @@ const SYNC_CODE_PATTERN = new RegExp('^[' + PAIR_CODE_ALPHABET + ']{6}$');
       CARDS = mergeCardSets(CARDS, remoteCards, mergedDeletions);
       saveDeletions(mergedDeletions);
       persist();
-      renderInboxList();
 
       const settings = loadSettings();
       settings.lastSyncedAt = new Date().toISOString();
@@ -2082,7 +2092,6 @@ function runImport(mode) {
     CARDS = Array.from(map.values());
   }
   persist();
-  renderInboxList();
   resultEl.innerHTML = `<span class="text-sage">已成功${mode === 'overwrite' ? '覆蓋' : '合併'}，共 ${CARDS.length} 張字卡</span>`;
   document.getElementById('importInput').value = '';
 }
@@ -2151,6 +2160,9 @@ function renderManageList() {
   const container = document.getElementById('manageList');
   container.innerHTML = '';
 
+  // 篩選條件改動後最直接的回饋就是這個數字有沒有變，
+  // 沒有它使用者會分不出「篩選沒生效」和「結果本來就長這樣」
+  document.getElementById('manageMatchCount').textContent = list.length;
   document.getElementById('manageSelectedCount').textContent = manageSelected.size;
   document.getElementById('manageSelectAll').checked = list.length > 0 && manageSelected.size === list.length;
 
@@ -2181,7 +2193,7 @@ function renderManageList() {
           <p class="text-sm text-muted">${escapeHtml(card.zhDefinition || '（無翻譯）')}</p>
           <p class="sentence-preview text-xs text-muted mt-1 line-clamp-2 cursor-pointer">${escapeHtml(card.sentence || '')}</p>
           <div class="flex flex-wrap gap-x-3 text-[10px] text-muted font-mono mt-1">
-            <span>來源：${escapeHtml(card.source || '')}</span>
+            <span>來源：${escapeHtml(stripSourceTime(card.source))}</span>
             <span>建立：${escapeHtml((card.createdAt || '').slice(0, 10))}</span>
             <span>下次複習：${escapeHtml(card.dueDate || '')}</span>
           </div>
@@ -2232,6 +2244,37 @@ document.getElementById('manageSelectAll').addEventListener('change', (e) => {
   });
 });
 
+// 快捷區間：多數情況只是想看「最近採集的」，不必開日期選擇器點兩次
+document.querySelectorAll('.range-btn').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    const range = btn.dataset.range;
+    const from = document.getElementById('manageDateFrom');
+    const to = document.getElementById('manageDateTo');
+    if (range === 'all') {
+      from.value = '';
+      to.value = '';
+    } else {
+      const days = Number(range);
+      const start = new Date();
+      start.setDate(start.getDate() - (days - 1));
+      from.value = start.toISOString().slice(0, 10);
+      to.value = todayISO();
+    }
+    manageSelected = new Set();
+    renderManageList();
+  });
+});
+
+document.getElementById('manageClearFilterBtn').addEventListener('click', () => {
+  document.getElementById('manageBatchFilter').value = '';
+  document.getElementById('manageStatusFilter').value = '';
+  document.getElementById('manageDateFrom').value = '';
+  document.getElementById('manageDateTo').value = '';
+  manageSelected = new Set();
+  renderManageList();
+  toast('已清除篩選條件');
+});
+
 document.getElementById('manageDeleteSelectedBtn').addEventListener('click', () => {
   if (manageSelected.size === 0) {
     toast('尚未選取任何字卡');
@@ -2243,7 +2286,6 @@ document.getElementById('manageDeleteSelectedBtn').addEventListener('click', () 
   CARDS = CARDS.filter((c) => !manageSelected.has(c.id));
   manageSelected = new Set();
   persist();
-  renderInboxList();
   renderManagePage();
   toast('已刪除選取的字卡');
 });
@@ -2265,7 +2307,6 @@ document.getElementById('manageDeleteBatchBtn').addEventListener('click', () => 
   CARDS = CARDS.filter((c) => c.batchId !== batchId);
   manageSelected = new Set();
   persist();
-  renderInboxList();
   renderManagePage();
   toast('已刪除整個批次');
 });
@@ -2281,7 +2322,6 @@ function switchPage(page) {
     btn.classList.toggle('active', btn.dataset.page === page);
   });
   if (page === 'review') startReview();
-  if (page === 'collect') renderInboxList();
   if (page === 'manage') renderManagePage();
 }
 
@@ -2308,7 +2348,6 @@ async function init() {
   loadEcdict(); // 非阻塞載入，查詢時才需要，不擋畫面顯示
   parseUrlText();
   renderDashboard();
-  renderInboxList();
   checkDueOnVisible();
   populateVoiceList(); // 部分瀏覽器語音清單同步就緒，先嘗試填一次
 
