@@ -668,8 +668,18 @@ function mergeDeletionMaps(localDeletions, remoteDeletions) {
   return pruneDeletions(merged);
 }
 
+// 用本地時區的年月日組出 YYYY-MM-DD。
+//
+// 不能用 toISOString().slice(0, 10)——那個給的是 UTC 日期。台灣是 UTC+8，
+// 所以每天凌晨 0 點到早上 8 點之間，UTC 還停在前一天，程式會把「今天」
+// 算成昨天，該複習的卡片要等到早上 8 點才會被判定為到期。
+function localDateISO(date) {
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
 function todayISO() {
-  return new Date().toISOString().slice(0, 10);
+  return localDateISO(new Date());
 }
 
 // 把 ISO 時間字串（UTC）轉成使用者裝置所在時區的可讀格式，
@@ -678,13 +688,13 @@ function formatLocalDateTime(isoString) {
   const d = new Date(isoString);
   if (isNaN(d.getTime())) return '';
   const pad = (n) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return `${localDateISO(d)} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 function addDays(days) {
   const d = new Date();
   d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
+  return localDateISO(d);
 }
 
 /* =========================================================
@@ -2404,7 +2414,7 @@ document.querySelectorAll('.range-btn').forEach((btn) => {
       const days = Number(range);
       const start = new Date();
       start.setDate(start.getDate() - (days - 1));
-      from.value = start.toISOString().slice(0, 10);
+      from.value = localDateISO(start);
       to.value = todayISO();
     }
     manageSelected = new Set();
