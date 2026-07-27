@@ -1855,6 +1855,18 @@ const SYNC_CODE_PATTERN = new RegExp('^[' + PAIR_CODE_ALPHABET + ']{6}$');
     return loadSettings().syncCode || '';
   }
 
+  // 每台裝置一組固定的識別碼，決定它在伺服器上寫哪一格。
+  // 有了這個，兩台裝置就不會去覆寫對方存的內容。
+  function getOrCreateDeviceId() {
+    const settings = loadSettings();
+    if (settings.syncDeviceId) return settings.syncDeviceId;
+    const bytes = crypto.getRandomValues(new Uint8Array(8));
+    const id = Array.from(bytes, (b) => PAIR_CODE_ALPHABET[b % PAIR_CODE_ALPHABET.length]).join('');
+    settings.syncDeviceId = id;
+    saveSettings(settings);
+    return id;
+  }
+
   function renderSyncState() {
     const code = loadSyncCode();
     codeInput.value = code;
@@ -1910,27 +1922,27 @@ const SYNC_CODE_PATTERN = new RegExp('^[' + PAIR_CODE_ALPHABET + ']{6}$');
     syncBtn.disabled = true;
     statusEl.textContent = '同步中…';
     try {
-      const pullRes = await fetch(`${LINE_WORKER_URL}/sync-cards?code=${encodeURIComponent(code)}`);
-      const remote = await pullRes.json();
-      if (remote.error) throw new Error(remote.error);
-
       const beforeCount = CARDS.length;
-      const remoteCards = (remote.cards || []).map(migrateCard);
-      const mergedDeletions = mergeDeletionMaps(loadDeletions(), remote.deletedCards || {});
-      const mergedCards = mergeCardSets(CARDS, remoteCards, mergedDeletions);
 
-      CARDS = mergedCards;
+      // 只上傳「本機有的」，由伺服器負責併進去再回傳合併結果。
+      // 不在這裡先算好合併再上傳——那樣一旦讀到尚未同步的舊資料，
+      // 就會把另一台剛傳上去的卡片當成「已經不存在」而覆蓋掉。
+      const res = await fetch(`${LINE_WORKER_URL}/sync-cards`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code, deviceId: getOrCreateDeviceId(), cards: CARDS, deletedCards: loadDeletions() })
+      });
+      const result = await res.json();
+      if (result.error) throw new Error(result.error);
+
+      // 回傳結果再跟本機併一次：這樣就算伺服器那份因為 KV 傳播延遲而
+      // 少了幾張，本機也不會因此弄丟自己原本就有的卡片
+      const mergedDeletions = mergeDeletionMaps(loadDeletions(), result.deletedCards || {});
+      const remoteCards = (result.cards || []).map(migrateCard);
+      CARDS = mergeCardSets(CARDS, remoteCards, mergedDeletions);
       saveDeletions(mergedDeletions);
       persist();
       renderInboxList();
-
-      const pushRes = await fetch(`${LINE_WORKER_URL}/sync-cards`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code, cards: CARDS, deletedCards: mergedDeletions })
-      });
-      const pushed = await pushRes.json();
-      if (pushed.error) throw new Error(pushed.error);
 
       const settings = loadSettings();
       settings.lastSyncedAt = new Date().toISOString();
