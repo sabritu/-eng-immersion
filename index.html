@@ -1656,22 +1656,73 @@ async function syncDueDateToLine() {
     return 'serviceWorker' in navigator && 'PushManager' in window;
   }
 
+  async function currentSubscription() {
+    if (!supported()) return null;
+    const reg = await navigator.serviceWorker.ready;
+    return reg.pushManager.getSubscription();
+  }
+
   async function updatePushStatus() {
     if (!supported()) {
       statusEl.textContent = '此瀏覽器不支援背景推播';
+      enableBtn.textContent = '開啟到期提醒';
       return;
     }
     if (Notification.permission === 'denied') {
       statusEl.textContent = '已被封鎖，請至瀏覽器/系統設定手動開啟通知權限';
+      enableBtn.textContent = '開啟到期提醒';
       return;
     }
     try {
-      const reg = await navigator.serviceWorker.ready;
-      const sub = await reg.pushManager.getSubscription();
+      const sub = await currentSubscription();
       statusEl.textContent = sub ? '已開啟 ✅' : '尚未開啟';
+      enableBtn.textContent = sub ? '關閉到期提醒' : '開啟到期提醒';
     } catch (e) {
       statusEl.textContent = '尚未開啟';
+      enableBtn.textContent = '開啟到期提醒';
     }
+  }
+
+  async function turnOn() {
+    const reg = await navigator.serviceWorker.ready;
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) {
+      sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
+      });
+    }
+    const code = getOrCreatePairCode();
+    await fetch(`${LINE_WORKER_URL}/subscribe-push`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code, endpoint: sub.endpoint })
+    });
+    const settings = loadSettings();
+    settings.pushEnabled = true;
+    saveSettings(settings);
+    toast('已開啟到期提醒');
+    syncDueDateToLine();
+  }
+
+  async function turnOff() {
+    const sub = await currentSubscription();
+    const settings = loadSettings();
+    if (settings.linePairCode) {
+      try {
+        await fetch(`${LINE_WORKER_URL}/unsubscribe-push`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code: settings.linePairCode })
+        });
+      } catch (e) {
+        // Worker 那邊沒刪成功也不擋使用者取消，本機先退訂再說
+      }
+    }
+    if (sub) await sub.unsubscribe();
+    settings.pushEnabled = false;
+    saveSettings(settings);
+    toast('已關閉到期提醒');
   }
 
   enableBtn.addEventListener('click', async () => {
@@ -1680,31 +1731,18 @@ async function syncDueDateToLine() {
       return;
     }
     try {
-      const reg = await navigator.serviceWorker.ready;
-      let sub = await reg.pushManager.getSubscription();
-      if (!sub) {
-        sub = await reg.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
-        });
+      const sub = await currentSubscription();
+      if (sub) {
+        await turnOff();
+      } else {
+        await turnOn();
       }
-      const code = getOrCreatePairCode();
-      await fetch(`${LINE_WORKER_URL}/subscribe-push`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code, endpoint: sub.endpoint })
-      });
-      const settings = loadSettings();
-      settings.pushEnabled = true;
-      saveSettings(settings);
-      toast('已開啟到期提醒');
-      syncDueDateToLine();
       updatePushStatus();
     } catch (e) {
       if (Notification.permission === 'denied') {
         toast('通知權限被拒絕，請至瀏覽器設定手動開啟');
       } else {
-        toast('開啟失敗，請確認網路連線後再試一次');
+        toast('操作失敗，請確認網路連線後再試一次');
       }
     }
   });
