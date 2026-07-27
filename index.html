@@ -135,78 +135,25 @@
         <span class="text-sm text-muted">已記住 <span id="masteryCount" class="text-paper">0</span> 字</span>
       </div>
 
-      <!-- 進度條就是長頸鹿的身體：三段熟練度依比例上色，斑紋只長在「已記住」那段 -->
-      <svg id="giraffeChart" viewBox="0 0 250 118" class="w-full" role="img" aria-labelledby="giraffeChartTitle">
-        <title id="giraffeChartTitle">記憶進度長頸鹿</title>
-        <defs>
-          <!-- 小 G 的斑點：稀疏、大顆、圓形，不是真長頸鹿那種密集網格 -->
-          <pattern id="giraffeSpots" width="30" height="30" patternUnits="userSpaceOnUse">
-            <rect width="30" height="30" fill="#d9a253"/>
-            <ellipse cx="8" cy="9" rx="5.5" ry="4.8" fill="#a6702c" opacity="0.5"/>
-            <ellipse cx="23" cy="22" rx="4.8" ry="5.2" fill="#a6702c" opacity="0.5"/>
-          </pattern>
-          <!-- 身體是一條水平膠囊形，跟頭同一條水平線，不再往上翹——
-               這樣進度色由左往右填色的方向跟身體的方向完全一致，
-               不會再出現顏色被硬切成方塊貼在轉彎處的問題 -->
-          <mask id="giraffeBodyMask">
-            <rect x="20" y="42" width="150" height="36" rx="18" fill="#fff"/>
-          </mask>
-        </defs>
-
-        <!-- 尾巴 -->
-        <path d="M16 54 Q4 58 8 70" stroke="#a6702c" stroke-width="3.5" fill="none" stroke-linecap="round"/>
-        <circle cx="8" cy="71" r="3.5" fill="#a6702c"/>
-
-        <!-- 四隻短腿：小 G 是圓潤討喜的比例，不是真長頸鹿的細長腿 -->
-        <g stroke="#c9903f" stroke-width="13" stroke-linecap="round">
-          <path d="M42 76 L40 96"/>
-          <path d="M68 78 L67 98"/>
-          <path d="M122 78 L123 98"/>
-          <path d="M148 76 L150 96"/>
-        </g>
-
-        <!-- 身體外框，讓形狀在深色底上有邊界 -->
-        <rect x="20" y="42" width="150" height="36" rx="18" fill="none" stroke="#a6702c" stroke-width="2" opacity="0.6"/>
-
-        <!-- 三段進度：由遮罩裁成身體的膠囊形 -->
-        <g mask="url(#giraffeBodyMask)">
-          <rect x="0" y="0" width="250" height="118" fill="#283a58"/>
-          <rect id="segMature" x="20" y="42" width="0" height="36" fill="url(#giraffeSpots)"/>
-          <rect id="segYoung" x="20" y="42" width="0" height="36" fill="#8ca083"/>
-          <rect id="segNew" x="20" y="42" width="0" height="36" fill="#4a5a78"/>
-        </g>
-
-        <!-- 頭：跟身體同一條水平線，直接接在右端 -->
-        <ellipse cx="196" cy="60" rx="30" ry="26" fill="url(#giraffeSpots)" stroke="#a6702c" stroke-width="2"/>
-        <!-- 兩根圓球角 -->
-        <path d="M184 38 L180 27" stroke="#c9903f" stroke-width="4.5" stroke-linecap="round"/>
-        <circle cx="179" cy="25" r="5" fill="#c9903f" stroke="#a6702c" stroke-width="1.5"/>
-        <path d="M208 38 L212 27" stroke="#c9903f" stroke-width="4.5" stroke-linecap="round"/>
-        <circle cx="213" cy="25" r="5" fill="#c9903f" stroke="#a6702c" stroke-width="1.5"/>
-        <!-- 耳朵 -->
-        <ellipse cx="170" cy="50" rx="9.5" ry="5.5" transform="rotate(-30 170 50)" fill="#e8c48a" stroke="#a6702c" stroke-width="1.5"/>
-        <ellipse cx="222" cy="50" rx="9.5" ry="5.5" transform="rotate(30 222 50)" fill="#e8c48a" stroke="#a6702c" stroke-width="1.5"/>
-        <!-- 口鼻與腮紅 -->
-        <ellipse cx="196" cy="72" rx="16" ry="11" fill="#f0dcb4" opacity="0.9"/>
-        <ellipse cx="174" cy="67" rx="6" ry="4" fill="#e89a9a" opacity="0.6"/>
-        <ellipse cx="218" cy="67" rx="6" ry="4" fill="#e89a9a" opacity="0.6"/>
-        <!-- 笑瞇瞇的眼睛 -->
-        <path d="M182 56 Q186 51 190 56" stroke="#6b4518" stroke-width="2.4" fill="none" stroke-linecap="round"/>
-        <path d="M203 56 Q207 51 211 56" stroke="#6b4518" stroke-width="2.4" fill="none" stroke-linecap="round"/>
-        <path d="M191 71 Q196 76 201 71" stroke="#6b4518" stroke-width="2.2" fill="none" stroke-linecap="round"/>
-      </svg>
+      <!-- 進度圖：小 G 本人負責上色。已記住的比例＝彩色從左邊開始「顯色」，
+           其餘部分維持灰階，越練越有色彩。兩張圖疊在一起，上面那張灰階版
+           用 clip-path 從左邊裁掉已記住的比例，底下的彩色版就會透出來。 -->
+      <div class="relative w-full rounded-lg overflow-hidden" style="aspect-ratio: 3 / 2; background: #1a263c;">
+        <img src="./giraffe-fly.png" alt="記憶進度長頸鹿" class="absolute inset-0 w-full h-full object-contain p-2">
+        <img id="giraffeGrayLayer" src="./giraffe-fly.png" alt="" aria-hidden="true" class="absolute inset-0 w-full h-full object-contain p-2" style="filter: grayscale(1) opacity(0.55); clip-path: inset(0 0 0 0%);">
+      </div>
 
       <div class="flex flex-wrap gap-x-4 gap-y-1 text-xs">
         <span class="flex items-center gap-1.5">
-          <span class="w-3 h-3 rounded-sm inline-block" style="background:#d9a253"></span>
+          <span class="w-3 h-3 rounded-full inline-block" style="background:#d9a253"></span>
           <span class="text-muted">已記住 <span id="tierMature" class="text-paper">0</span></span>
         </span>
         <span class="flex items-center gap-1.5">
-          <span class="w-3 h-3 rounded-sm inline-block" style="background:#8ca083"></span>
+          <span class="w-3 h-3 rounded-full inline-block border border-hair" style="background:#8ca083; opacity:0.5"></span>
           <span class="text-muted">熟悉中 <span id="tierYoung" class="text-paper">0</span></span>
         </span>
         <span class="flex items-center gap-1.5">
-          <span class="w-3 h-3 rounded-sm inline-block" style="background:#4a5a78"></span>
+          <span class="w-3 h-3 rounded-full inline-block border border-hair" style="background:#4a5a78; opacity:0.5"></span>
           <span class="text-muted">剛認識 <span id="tierNew" class="text-paper">0</span></span>
         </span>
       </div>
@@ -1847,13 +1794,9 @@ function renderDashboard() {
   updateAppBadge(due.length);
 }
 
-// 記憶進度長頸鹿：身體＝三段熟練度的比例，斑紋只長在「已記住」那段。
+// 記憶進度長頸鹿：小 G 身上彩色的比例＝已記住的字卡比例，其餘維持灰階。
 // 分級標準跟字卡詳細頁的 getMasteryTier 同一套（Anki 的 21 天成熟卡標準），
 // 兩邊要一致，不然使用者會看到互相矛盾的說法。
-// 進度填色的範圍要對齊身體膠囊形的 x/width
-const GIRAFFE_BODY_X = 20;
-const GIRAFFE_BODY_WIDTH = 150;
-
 function renderMasteryChart() {
   const active = CARDS.filter((c) => c.status === 'active');
   const counts = { mature: 0, young: 0, new: 0 };
@@ -1868,20 +1811,9 @@ function renderMasteryChart() {
   document.getElementById('tierYoung').textContent = counts.young;
   document.getElementById('tierNew').textContent = counts.new;
 
-  // 三段由左而右依序排列，用累加的方式定位，避免因四捨五入而露出縫隙
-  const widthFor = (n) => (total ? (n / total) * GIRAFFE_BODY_WIDTH : 0);
-  const matureW = widthFor(counts.mature);
-  const youngW = widthFor(counts.young);
-  const newW = total ? GIRAFFE_BODY_WIDTH - matureW - youngW : 0;
-
-  const setSeg = (id, x, w) => {
-    const el = document.getElementById(id);
-    el.setAttribute('x', x);
-    el.setAttribute('width', Math.max(0, w));
-  };
-  setSeg('segMature', GIRAFFE_BODY_X, matureW);
-  setSeg('segYoung', GIRAFFE_BODY_X + matureW, youngW);
-  setSeg('segNew', GIRAFFE_BODY_X + matureW + youngW, newW);
+  // 灰階圖層從左邊裁掉「已記住」的比例，底下的彩色版就會透出來
+  const grayLayer = document.getElementById('giraffeGrayLayer');
+  if (grayLayer) grayLayer.style.clipPath = `inset(0 0 0 ${percent}%)`;
 
   const hint = document.getElementById('masteryHint');
   if (!total) {
