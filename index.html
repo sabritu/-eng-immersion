@@ -352,14 +352,14 @@
 
 <!-- ============ 字卡查詢/儲存 Modal（共用：手動採集 + YouTube 點字皆用此） ============ -->
 <div id="youglishModal" class="hidden fixed inset-0 z-30 bg-black/70 flex items-end sm:items-center justify-center">
-  <div class="bg-surface border border-hair rounded-t-2xl sm:rounded-lg w-full sm:max-w-md p-5 space-y-3 max-h-[85vh] overflow-y-auto">
+  <div class="bg-surface border border-hair rounded-t-2xl sm:rounded-lg w-full sm:max-w-2xl p-5 space-y-3 max-h-[85vh] overflow-y-auto">
     <div class="flex justify-between items-center">
       <h3 class="font-serif text-lg text-amber">聽真人說：<span id="youglishWord"></span></h3>
       <button id="closeYouglishBtn" class="text-muted text-xl leading-none hover:text-paper">✕</button>
     </div>
-    <div id="youglishFrame" class="bg-paper rounded-lg border border-hair p-2 overflow-hidden h-64 sm:h-80 flex items-center justify-center">
+    <div id="youglishFrame" class="bg-paper rounded-lg border border-hair p-2 min-h-[16rem] flex items-center justify-center">
       <p id="youglishLoading" class="specimen-tag text-ink/60">讀取中…</p>
-      <div id="youglishContainer" class="hidden w-full h-full"></div>
+      <div id="youglishContainer" class="hidden w-full"></div>
     </div>
     <p class="specimen-tag text-center">Powered by YouGlish</p>
   </div>
