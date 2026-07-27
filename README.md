@@ -83,6 +83,63 @@ App 內建的「YouTube 分頁」需要你自己去找逐字稿、複製貼上�
 
 > 這個小工具是讀取 YouTube 自己頁面上顯示的逐字稿內容，不是連去 YouTube 的伺服器硬抓，所以不會有「查無結果」或被擋的問題；只要 YouTube 網頁上看得到逐字稿，這個工具就能用。
 
+## 5. LINE 到期提醒（選用，解決「App 沒開就收不到提醒」的問題）
+
+App 本身的「到期提醒通知」只有在你開著 App 的時候才會跳出來，沒開 App 就完全不會提醒。這個功能用一個免費的 Cloudflare Worker + LINE 官方帳號，做到「有字卡到期時，主動推播到 LINE」。
+
+**設計原則：只在真的有字卡到期時才推播，不會每天騷擾你**——字卡內容完全不會上傳，Worker 只知道「下次到期日」這一個日期。
+
+### 5-1　開一個新的免費 LINE 官方帳號
+
+建議另外開一個新帳號，不要跟甜甜草工作室的官方帳號共用（避免占用業務用的免費推播額度、也避免這個小工具的程式碼影響到業務帳號）。
+
+1. 到 [LINE Official Account Manager](https://manager.line.biz/) 用你的 LINE 帳號登入，點「建立帳號」。
+2. 帳號名稱隨意（例如「英語複習提醒」），類別選個人／其他即可，免費方案就夠用。
+3. 建立後，進到該帳號的「設定」→「回應設定」，把「加入好友的歡迎訊息」「自動回應訊息」都關掉（避免干擾，只留 Messaging API 主動推播）。
+
+### 5-2　開通 Messaging API，拿到金鑰
+
+1. 到 [LINE Developers Console](https://developers.line.biz/console/)，用同一個 LINE 帳號登入。
+2. 應該會自動看到剛剛建立的官方帳號變成一個 Provider／Channel，點進去該 Channel。
+3. 「Messaging API」分頁 → 找到 **Channel access token**，按「Issue」產生一組長期有效的 token，複製起來。
+4. 同一頁上方「Basic settings」分頁能看到 **Channel secret**，也複製起來。
+5. 這兩組資料等一下要貼進 Cloudflare Worker 的 Secret 設定，先存到密碼管理工具或筆記裡，不要外流。
+
+### 5-3　部署 Cloudflare Worker
+
+沿用你之前部署 `transcript-worker.js` 的同一個 Cloudflare 帳號：
+
+1. 到 [Cloudflare Dashboard](https://dash.cloudflare.com/) → 左側「Workers & Pages」→「建立」→「建立 Worker」，取名例如 `line-due-reminder`。
+2. 進到剛建好的 Worker，點「編輯程式碼」，把整包內容清空，貼上這個資料夾裡 `worker/line-worker.js` 的內容，儲存並部署。
+3. 建立 KV 資料庫：Workers & Pages 首頁左側「KV」→「建立命名空間」，取名例如 `line-due-kv`。
+4. 回到 `line-due-reminder` 這個 Worker →「設定」→「變數與機密」：
+   - 「KV 命名空間繫結」新增一筆：變數名稱填 `DUE_KV`，選剛建立的 `line-due-kv`。
+   - 「環境變數」新增（型態選 **Secret**，避免明碼外洩）：
+     - `LINE_CHANNEL_ACCESS_TOKEN` = 5-2 拿到的 token
+     - `LINE_CHANNEL_SECRET` = 5-2 拿到的 secret
+     - `SYNC_SECRET` = 自己隨便編一組英數字密碼（例如用密碼產生器生一組），等一下 App 端要填同一組
+   - 「環境變數」再新增一筆一般變數（不用勾 Secret）：`APP_URL` = 你的 PWA 網址（`https://sabritu.github.io/-eng-immersion/`）
+5. 加排程：同一個 Worker 的「觸發器」分頁 →「Cron 觸發器」→ 新增，填 `0 0 * * *`（這是 UTC 時間 00:00，等於台北時間每天早上 8 點檢查一次；想改時間可以自己調整這個 cron 運算式）。
+6. 部署完成後，Worker 首頁會顯示網址，格式類似 `https://line-due-reminder.你的帳號.workers.dev`，複製起來。
+
+### 5-4　設定 LINE Webhook
+
+1. 回到 LINE Developers Console 該 Channel 的「Messaging API」分頁。
+2. 「Webhook settings」→ Webhook URL 填：`https://line-due-reminder.你的帳號.workers.dev/webhook`（把網址換成你自己的），儲存。
+3. 打開「Use webhook」開關。
+4. 可以點旁邊的「Verify」測試連線是否成功（會顯示 Success）。
+
+### 5-5　加好友 + 完成綁定
+
+1. 在 LINE Official Account Manager 首頁找到這個帳號的 QR Code，用你自己的手機 LINE 掃描加好友。
+2. 加好友的瞬間，Worker 會自動抓到你的 LINE userId 存進 KV，不需要手動操作。
+
+### 5-6　把 Worker 網址填回 App
+
+1. 打開 PWA →「資料」分頁 → 找到「LINE 到期提醒」卡片。
+2. 「Worker 網址」填 5-3 步驟 6 拿到的網址，「同步密碼」填 5-3 步驟 4 設定的 `SYNC_SECRET`，按「儲存」。
+3. 之後每次開啟 App，會自動把下次到期日同步給 Worker；真的有字卡到期時，Cron 會在設定的時間點透過 LINE 推播提醒你。
+
 ## 補充
 
 - 首次使用建議先到「首頁」點「開啟到期提醒通知」授權，之後才會收到複習提醒推播。

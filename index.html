@@ -261,6 +261,14 @@
       </div>
       <p id="importResult" class="text-xs"></p>
     </div>
+    <div class="specimen-card p-4 space-y-3">
+      <p class="specimen-tag">LINE 到期提醒（選用）</p>
+      <p class="text-xs text-muted">部署好 Worker 後，把網址跟同步密碼貼在這裡，App 才會自動把「下次到期日」同步過去。詳見 README「5. LINE 到期提醒」。</p>
+      <input id="lineWorkerUrlInput" type="text" placeholder="Worker 網址，例如 https://xxx.workers.dev" class="w-full bg-surface2 border border-hair rounded-lg p-3 text-sm outline-none placeholder:text-muted">
+      <input id="lineSyncSecretInput" type="text" placeholder="同步密碼（跟 Worker 設定的 SYNC_SECRET 一致）" class="w-full bg-surface2 border border-hair rounded-lg p-3 text-sm outline-none placeholder:text-muted">
+      <button id="saveLineSettingsBtn" class="btn-quiet w-full py-2.5 rounded-lg text-sm">儲存</button>
+      <p id="lineSettingsStatus" class="text-xs text-muted"></p>
+    </div>
     <div class="pt-2 text-center text-xs text-muted space-y-1">
       <p><a href="./guide.html" target="_blank" rel="noopener" class="hover:text-paper">使用手冊</a></p>
       <p>製作 · <a href="https://sweetenbud.com/" target="_blank" rel="noopener" class="hover:text-paper">甜甜草行銷工作室</a></p>
@@ -1371,6 +1379,7 @@ function checkDueOnVisible() {
   if (document.visibilityState !== 'visible') return;
   const due = getDueCards();
   renderDashboard();
+  syncDueDateToLine();
   if (due.length === 0) return;
   if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
 
@@ -1386,6 +1395,54 @@ function checkDueOnVisible() {
 }
 
 document.addEventListener('visibilitychange', checkDueOnVisible);
+
+// 找出所有生效中字卡裡最早的到期日（可能是今天已到期，也可能是未來某天）
+// LINE 提醒 Worker 靠這個日期判斷「今天該不該推播」，實現只在真的有到期時才推
+function getNextDueDate() {
+  const activeCards = CARDS.filter((c) => c.status === 'active');
+  if (activeCards.length === 0) return null;
+  return activeCards.reduce((min, c) => (c.dueDate < min ? c.dueDate : min), activeCards[0].dueDate);
+}
+
+// 把下次到期日同步給 LINE 提醒 Worker（選用功能，未設定網址時靜默跳過）
+async function syncDueDateToLine() {
+  const settings = loadSettings();
+  if (!settings.lineWorkerUrl) return;
+  const dueDate = getNextDueDate();
+  if (!dueDate) return;
+  try {
+    const base = settings.lineWorkerUrl.replace(/\/+$/, '');
+    await fetch(`${base}/sync-due`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-sync-secret': settings.lineSyncSecret || '' },
+      body: JSON.stringify({ dueDate })
+    });
+  } catch (e) {
+    // 離線或 Worker 未部署時靜默失敗，不影響 App 正常使用
+  }
+}
+
+(function initLineSettingsForm() {
+  const urlInput = document.getElementById('lineWorkerUrlInput');
+  const secretInput = document.getElementById('lineSyncSecretInput');
+  const status = document.getElementById('lineSettingsStatus');
+  const saveBtn = document.getElementById('saveLineSettingsBtn');
+  if (!saveBtn) return;
+
+  const settings = loadSettings();
+  if (settings.lineWorkerUrl) urlInput.value = settings.lineWorkerUrl;
+  if (settings.lineSyncSecret) secretInput.value = settings.lineSyncSecret;
+
+  saveBtn.addEventListener('click', () => {
+    const s = loadSettings();
+    s.lineWorkerUrl = urlInput.value.trim();
+    s.lineSyncSecret = secretInput.value.trim();
+    saveSettings(s);
+    status.textContent = '已儲存';
+    toast('已儲存 LINE 提醒設定');
+    syncDueDateToLine();
+  });
+})();
 
 document.getElementById('requestNotifyBtn').addEventListener('click', async () => {
   if (typeof Notification === 'undefined') {
