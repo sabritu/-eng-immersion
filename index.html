@@ -612,6 +612,15 @@ function todayISO() {
   return new Date().toISOString().slice(0, 10);
 }
 
+// 把 ISO 時間字串（UTC）轉成使用者裝置所在時區的可讀格式，
+// 純顯示用——不要拿這個結果去做日期比較或存檔
+function formatLocalDateTime(isoString) {
+  const d = new Date(isoString);
+  if (isNaN(d.getTime())) return '';
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 function addDays(days) {
   const d = new Date();
   d.setDate(d.getDate() + days);
@@ -1889,7 +1898,7 @@ const SYNC_CODE_PATTERN = new RegExp('^[' + PAIR_CODE_ALPHABET + ']{6}$');
     codeInput.value = code;
     const settings = loadSettings();
     statusEl.textContent = settings.lastSyncedAt
-      ? `上次同步：${settings.lastSyncedAt.slice(0, 16).replace('T', ' ')}`
+      ? `上次同步：${formatLocalDateTime(settings.lastSyncedAt)}`
       : (code ? '尚未同步過' : '尚未設定同步碼');
   }
 
