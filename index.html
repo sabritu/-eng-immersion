@@ -272,16 +272,16 @@
 
     <div class="specimen-card p-4 space-y-3">
       <p class="specimen-tag">手機／電腦同步</p>
-      <p class="text-xs text-muted">兩台裝置填同一組同步碼，按下同步就會互相補齊。同一個單字兩邊都有時，保留比較晚修改的那一版。</p>
+      <p class="text-xs text-muted">兩台裝置用同一組同步碼，按下同步就會互相補齊。同一個單字兩邊都有時，保留比較晚修改的那一版。</p>
       <div class="flex gap-2">
         <input id="syncCodeInput" type="text" inputmode="text" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="6"
-          placeholder="同步碼" class="flex-1 bg-surface2 border border-hair rounded-lg p-2.5 text-sm font-mono tracking-widest uppercase outline-none placeholder:text-muted placeholder:tracking-normal placeholder:normal-case focus:border-amber">
-        <button id="syncSaveCodeBtn" class="btn-quiet px-4 py-2.5 rounded-lg text-sm whitespace-nowrap">儲存</button>
+          placeholder="輸入或產生同步碼" class="flex-1 bg-surface2 border border-hair rounded-lg p-2.5 text-sm font-mono tracking-widest uppercase outline-none placeholder:text-muted placeholder:tracking-normal placeholder:normal-case focus:border-amber">
+        <button id="syncCopyCodeBtn" class="btn-quiet px-4 py-2.5 rounded-lg text-sm whitespace-nowrap">複製</button>
       </div>
+      <button id="syncGenerateBtn" class="btn-quiet w-full py-2 rounded-lg text-xs">產生新的同步碼</button>
       <button id="syncNowBtn" class="btn-primary w-full py-2.5 rounded-lg text-sm">立即同步</button>
       <p id="syncStatus" class="text-xs text-muted"></p>
-      <p class="text-xs text-muted">還沒有同步碼？在其中一台按「產生同步碼」，再把它填到另一台。</p>
-      <button id="syncGenerateBtn" class="btn-quiet w-full py-2 rounded-lg text-xs">產生同步碼</button>
+      <p class="text-xs text-muted">第一次使用：在其中一台按「產生新的同步碼」再按「複製」，把碼傳到另一台貼上，兩台各按一次「立即同步」。</p>
     </div>
 
     <h2 class="text-lg font-serif text-paper pt-2">提醒設定</h2>
@@ -1841,9 +1841,11 @@ async function syncDueDateToLine() {
 /* ---- 手機／電腦同步 ----
    流程刻意是「先取回 → 本機合併 → 再上傳合併結果」，兩台都跑過一次之後
    兩邊就會一致。合併在裝置上做，Worker 只當保管箱，不解讀內容。 */
+const SYNC_CODE_PATTERN = new RegExp('^[' + PAIR_CODE_ALPHABET + ']{6}$');
+
 (function initCardSync() {
   const codeInput = document.getElementById('syncCodeInput');
-  const saveCodeBtn = document.getElementById('syncSaveCodeBtn');
+  const copyCodeBtn = document.getElementById('syncCopyCodeBtn');
   const generateBtn = document.getElementById('syncGenerateBtn');
   const syncBtn = document.getElementById('syncNowBtn');
   const statusEl = document.getElementById('syncStatus');
@@ -1862,27 +1864,40 @@ async function syncDueDateToLine() {
       : (code ? '尚未同步過' : '尚未設定同步碼');
   }
 
-  saveCodeBtn.addEventListener('click', () => {
+  // 打滿 6 碼就自動存起來，不用再按一顆「儲存」——那顆按鈕除了多一個步驟
+  // 之外沒有任何作用，使用者還會誤以為它是「複製」
+  codeInput.addEventListener('input', () => {
     const code = codeInput.value.trim().toUpperCase();
-    if (!/^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{6}$/.test(code)) {
-      toast('同步碼格式不對，應為 6 位英數字');
-      return;
-    }
+    if (!SYNC_CODE_PATTERN.test(code)) return;
     const settings = loadSettings();
     settings.syncCode = code;
     saveSettings(settings);
-    renderSyncState();
-    toast('已儲存同步碼');
+    statusEl.textContent = '同步碼已設定，按「立即同步」開始';
+  });
+
+  copyCodeBtn.addEventListener('click', async () => {
+    const code = codeInput.value.trim().toUpperCase();
+    if (!SYNC_CODE_PATTERN.test(code)) {
+      toast('還沒有同步碼，請先按「產生新的同步碼」');
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(code);
+      toast('已複製同步碼，貼到另一台裝置');
+    } catch (e) {
+      toast('複製失敗，請手動抄下這 6 個字');
+    }
   });
 
   generateBtn.addEventListener('click', () => {
+    if (loadSyncCode() && !confirm('已經有同步碼了。產生新的會跟目前配對的裝置斷開，確定要換嗎？')) return;
     const bytes = crypto.getRandomValues(new Uint8Array(6));
     const code = Array.from(bytes, (b) => PAIR_CODE_ALPHABET[b % PAIR_CODE_ALPHABET.length]).join('');
     const settings = loadSettings();
     settings.syncCode = code;
     saveSettings(settings);
     renderSyncState();
-    toast('已產生同步碼，請在另一台裝置填入同一組');
+    toast('已產生同步碼，按「複製」傳到另一台');
   });
 
   syncBtn.addEventListener('click', async () => {
