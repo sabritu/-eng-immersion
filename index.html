@@ -215,6 +215,9 @@
               <button id="revealSpeakBtn" type="button" title="播放發音" class="text-muted hover:text-amber shrink-0">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4V5Z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/></svg>
               </button>
+              <button id="revealYouglishBtn" type="button" title="聽真人說" class="text-muted hover:text-amber shrink-0">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M10 9v6l5-3-5-3Z" fill="currentColor" stroke="none"/></svg>
+              </button>
             </div>
             <p class="text-sm text-muted font-mono" id="revealPhonetic"></p>
             <p class="text-sm mt-1 text-paper" id="revealMeaning"></p>
@@ -348,6 +351,20 @@
 </nav>
 
 <!-- ============ 字卡查詢/儲存 Modal（共用：手動採集 + YouTube 點字皆用此） ============ -->
+<div id="youglishModal" class="hidden fixed inset-0 z-30 bg-black/70 flex items-end sm:items-center justify-center">
+  <div class="bg-surface border border-hair rounded-t-2xl sm:rounded-lg w-full sm:max-w-md p-5 space-y-3 max-h-[85vh] overflow-y-auto">
+    <div class="flex justify-between items-center">
+      <h3 class="font-serif text-lg text-amber">聽真人說：<span id="youglishWord"></span></h3>
+      <button id="closeYouglishBtn" class="text-muted text-xl leading-none hover:text-paper">✕</button>
+    </div>
+    <div id="youglishFrame" class="bg-paper rounded-lg border border-hair p-2 overflow-hidden h-64 sm:h-80 flex items-center justify-center">
+      <p id="youglishLoading" class="specimen-tag text-ink/60">讀取中…</p>
+      <div id="youglishContainer" class="hidden w-full h-full"></div>
+    </div>
+    <p class="specimen-tag text-center">Powered by YouGlish</p>
+  </div>
+</div>
+
 <div id="lookupModal" class="hidden fixed inset-0 z-30 bg-black/70 flex items-end sm:items-center justify-center">
   <div class="bg-surface border border-hair rounded-t-2xl sm:rounded-lg w-full sm:max-w-md p-5 space-y-3 max-h-[85vh] overflow-y-auto">
     <div class="flex justify-between items-center">
@@ -1044,6 +1061,64 @@ document.getElementById('revealSpeakBtn').addEventListener('click', () => {
   if (currentReviewCard && currentReviewCard.word) speakSentence(currentReviewCard.word);
 });
 
+// YouGlish：真人發音影片牆，只在使用者主動點開時才載入，不落地存任何資料
+let youglishReadyPromise = null;
+let youglishWidget = null;
+
+function loadYouglishScript() {
+  if (youglishReadyPromise) return youglishReadyPromise;
+  youglishReadyPromise = new Promise((resolve, reject) => {
+    window.onYouglishAPIReady = resolve;
+    const script = document.createElement('script');
+    script.src = 'https://youglish.com/public/emb/widget.js';
+    script.onerror = reject;
+    document.head.appendChild(script);
+  });
+  return youglishReadyPromise;
+}
+
+async function openYouglish(word) {
+  if (!word) return;
+  const modal = document.getElementById('youglishModal');
+  const loading = document.getElementById('youglishLoading');
+  const container = document.getElementById('youglishContainer');
+
+  document.getElementById('youglishWord').textContent = word;
+  modal.classList.remove('hidden');
+  loading.textContent = '讀取中…';
+  loading.classList.remove('hidden');
+  container.classList.add('hidden');
+
+  try {
+    await loadYouglishScript();
+    if (!youglishWidget) {
+      youglishWidget = new YG.Widget('youglishContainer', {
+        width: container.parentElement.clientWidth - 16,
+        components: 8,
+        events: {
+          onFetchDone: () => {
+            loading.classList.add('hidden');
+            container.classList.remove('hidden');
+          }
+        }
+      });
+    }
+    youglishWidget.fetch(word, 'english');
+  } catch (e) {
+    loading.textContent = '載入失敗，請確認網路連線';
+  }
+}
+
+document.getElementById('revealYouglishBtn').addEventListener('click', () => {
+  if (currentReviewCard && currentReviewCard.word) openYouglish(currentReviewCard.word);
+});
+
+document.getElementById('closeYouglishBtn').addEventListener('click', () => {
+  document.getElementById('youglishModal').classList.add('hidden');
+  document.getElementById('youglishContainer').innerHTML = '';
+  youglishWidget = null;
+});
+
 document.getElementById('modalSaveBtn').addEventListener('click', () => {
   const word = document.getElementById('modalWord').value.trim().toLowerCase();
   if (!word) return;
@@ -1729,6 +1804,9 @@ function renderManageList() {
               <button class="manage-speak-btn text-muted hover:text-amber shrink-0" title="播放發音">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4V5Z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/></svg>
               </button>
+              <button class="manage-youglish-btn text-muted hover:text-amber shrink-0" title="聽真人說">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M10 9v6l5-3-5-3Z" fill="currentColor" stroke="none"/></svg>
+              </button>
             </span>
             <span class="specimen-tag shrink-0">${card.status === 'active' ? '複習中' : '待處理'}</span>
           </div>
@@ -1757,6 +1835,11 @@ function renderManageList() {
     row.querySelector('.manage-speak-btn').addEventListener('click', (e) => {
       e.stopPropagation();
       speakSentence(card.word);
+    });
+
+    row.querySelector('.manage-youglish-btn').addEventListener('click', (e) => {
+      e.stopPropagation();
+      openYouglish(card.word);
     });
 
     container.appendChild(row);
