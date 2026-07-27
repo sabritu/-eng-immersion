@@ -359,6 +359,66 @@
     <div id="manageList" class="space-y-2"></div>
   </section>
 
+  <!-- ============ 分頁八：字卡詳細／編輯（由字卡管理點卡片進入） ============ -->
+  <section id="page-detail" class="page space-y-4 hidden">
+    <div class="flex items-center justify-between">
+      <h2 class="text-lg font-serif text-paper">字卡內容</h2>
+      <button id="detailBackBtn" class="text-xs text-muted hover:text-paper">← 返回字卡管理</button>
+    </div>
+
+    <div class="specimen-card p-4 space-y-3">
+      <p id="detailWord" class="font-serif text-3xl text-amber break-words"></p>
+      <div id="detailAccents" class="flex flex-wrap gap-2"></div>
+      <button id="detailYouglishBtn" class="btn-quiet w-full py-2.5 rounded-lg text-sm flex items-center justify-center gap-2">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M10 9v6l5-3-5-3Z" fill="currentColor" stroke="none"/></svg>
+        聽真人說（YouGlish）
+      </button>
+    </div>
+
+    <div class="specimen-card p-4 space-y-3">
+      <p class="specimen-tag">內容</p>
+      <div>
+        <label class="specimen-tag" for="detailMeaning">中文翻譯</label>
+        <input id="detailMeaning" type="text" class="w-full bg-surface2 border border-hair rounded-lg p-2.5 text-sm mt-1 outline-none focus:border-amber">
+      </div>
+      <div>
+        <label class="specimen-tag" for="detailEnDefinition">英文釋義</label>
+        <textarea id="detailEnDefinition" rows="2" class="w-full bg-surface2 border border-hair rounded-lg p-2.5 text-sm mt-1 outline-none resize-none focus:border-amber"></textarea>
+      </div>
+      <div>
+        <div class="flex items-center justify-between">
+          <label class="specimen-tag" for="detailSentence">語境句</label>
+          <button id="detailSpeakSentenceBtn" class="text-muted hover:text-amber" title="朗讀整句">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4V5Z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/></svg>
+          </button>
+        </div>
+        <textarea id="detailSentence" rows="3" class="w-full bg-surface2 border border-hair rounded-lg p-2.5 text-sm mt-1 outline-none resize-none focus:border-amber font-serif"></textarea>
+      </div>
+      <div>
+        <label class="specimen-tag" for="detailSentenceZh">語境句中文翻譯</label>
+        <textarea id="detailSentenceZh" rows="2" class="w-full bg-surface2 border border-hair rounded-lg p-2.5 text-sm mt-1 outline-none resize-none focus:border-amber"></textarea>
+      </div>
+      <button id="detailSaveBtn" class="btn-primary w-full py-2.5 rounded-lg text-sm">儲存變更</button>
+    </div>
+
+    <div class="specimen-card p-4 space-y-2">
+      <p class="specimen-tag">複習狀態</p>
+      <div class="flex items-baseline gap-2">
+        <span id="detailStage" class="font-serif text-lg text-paper"></span>
+        <span id="detailStageHint" class="text-xs text-muted"></span>
+      </div>
+      <div class="flex flex-wrap gap-x-4 text-xs text-muted font-mono">
+        <span>複習次數：<span id="detailReps" class="text-paper"></span></span>
+        <span>目前間隔：<span id="detailInterval" class="text-paper"></span></span>
+        <span>下次複習：<span id="detailDueDate" class="text-paper"></span></span>
+      </div>
+      <p class="text-xs text-muted pt-1">來源：<span id="detailSource"></span></p>
+      <button id="detailResetBtn" class="btn-quiet w-full py-2 rounded-lg text-xs mt-1">重設複習進度（從頭再學一次）</button>
+    </div>
+
+    <button id="detailDeleteBtn" class="w-full py-2.5 rounded-lg text-sm bg-red-500/80 hover:bg-red-500 text-white font-bold">刪除這張字卡</button>
+  </section>
+
   <!-- ============ 分頁七：快速建卡（v3 新增，由分享／捷徑帶入文字後自動進入） ============ -->
   <section id="page-quickadd" class="page space-y-4 hidden">
     <div class="flex items-center justify-between">
@@ -1053,6 +1113,22 @@ function extractPhonetic(entry) {
   return found ? found.text : '';
 }
 
+// dictionaryapi.dev 的 phonetics 陣列常同時含美式與英式，音檔網址結尾是
+// -us.mp3 / -uk.mp3。原本只取第一筆就丟掉其餘，這裡把兩種腔調各自的
+// 音標與真人音檔留下來，缺哪一種就留空，由呼叫端決定怎麼退回合成語音。
+function extractAccents(entry) {
+  const accents = { us: { text: '', audio: '' }, uk: { text: '', audio: '' } };
+  (entry.phonetics || []).forEach((p) => {
+    const audio = p.audio || '';
+    const key = audio.includes('-us.') ? 'us' : (audio.includes('-uk.') ? 'uk' : null);
+    if (!key || accents[key].audio) return;
+    accents[key].audio = audio;
+    // 有些條目音檔那筆沒帶音標，退而取整體音標，至少讓畫面有東西可顯示
+    accents[key].text = p.text || entry.phonetic || '';
+  });
+  return accents;
+}
+
 function extractEnDefinition(entry) {
   const meaning = entry.meanings && entry.meanings[0];
   const def = meaning && meaning.definitions && meaning.definitions[0];
@@ -1081,6 +1157,7 @@ async function lookupWord(word) {
     return {
       source: zh ? 'google' : 'dictionaryapi',
       phonetic: enResult ? extractPhonetic(enResult.entry) : '',
+      accents: enResult ? extractAccents(enResult.entry) : null,
       zhDefinition: zh || '',
       enDefinition: enResult ? extractEnDefinition(enResult.entry) : '',
       tags: ''
@@ -1089,11 +1166,18 @@ async function lookupWord(word) {
   return null;
 }
 
+// 只為了補腔調資料而查一次字典（ECDICT 是本地辭典，沒有音檔，所以直接打 API）。
+// 舊字卡沒有這份資料，詳細頁開啟時會呼叫這個自動補上並存回卡片。
+async function fetchAccentsFor(word) {
+  const enResult = await lookupEnDictionary(word);
+  return enResult ? extractAccents(enResult.entry) : null;
+}
+
 /* =========================================================
    查詢/儲存 Modal 共用邏輯
    ========================================================= */
 
-let modalContext = { existingId: null, enDefinition: '', tags: '' };
+let modalContext = { existingId: null, enDefinition: '', tags: '', accents: null };
 
 function describeLookupSource(result) {
   const labelMap = {
@@ -1147,6 +1231,7 @@ async function openLookupModal(word, sentence) {
   document.getElementById('modalStatus').textContent = '查詢中…';
   modalContext.enDefinition = '';
   modalContext.tags = '';
+  modalContext.accents = null;
   renderRelatedPhrases(word.toLowerCase(), sentence);
 
   const existing = CARDS.find((c) => c.word === word.toLowerCase() && c.status === 'active');
@@ -1157,6 +1242,7 @@ async function openLookupModal(word, sentence) {
     document.getElementById('modalSentenceZh').value = existing.sentenceZh || '';
     modalContext.enDefinition = existing.enDefinition || '';
     modalContext.tags = existing.tags || '';
+    modalContext.accents = existing.accents || null;
   }
 
   // 單字查詢與整句翻譯同時進行，互不阻塞（其中一個逾時/失敗不影響另一個）
@@ -1174,6 +1260,7 @@ async function openLookupModal(word, sentence) {
     document.getElementById('modalMeaning').value = result.zhDefinition || document.getElementById('modalMeaning').value;
     modalContext.enDefinition = result.enDefinition || modalContext.enDefinition;
     modalContext.tags = result.tags || modalContext.tags;
+    modalContext.accents = result.accents || modalContext.accents;
     document.getElementById('modalStatus').textContent = describeLookupSource(result);
   } else {
     document.getElementById('modalStatus').textContent = '查無結果（或逾時），請手動填寫翻譯與音標。';
@@ -1193,7 +1280,8 @@ document.getElementById('modalSpeakBtn').addEventListener('click', () => {
 });
 
 document.getElementById('revealSpeakBtn').addEventListener('click', () => {
-  if (currentReviewCard && currentReviewCard.word) speakSentence(currentReviewCard.word);
+  if (!currentReviewCard || !currentReviewCard.word) return;
+  speakCardWord(currentReviewCard);
 });
 
 // YouGlish：真人發音影片牆，只在使用者主動點開時才載入，不落地存任何資料
@@ -1274,6 +1362,7 @@ document.getElementById('modalSaveBtn').addEventListener('click', () => {
     c.sentence = sentence || c.sentence;
     c.sentenceZh = sentenceZh;
     c.status = 'active';
+    if (modalContext.accents) c.accents = modalContext.accents;
     touchCard(c);
   } else {
     CARDS.push(touchCard({
@@ -1283,6 +1372,7 @@ document.getElementById('modalSaveBtn').addEventListener('click', () => {
       enDefinition,
       tags,
       sentenceZh,
+      accents: modalContext.accents || null,
       status: 'active'
     }));
   }
@@ -1441,6 +1531,43 @@ function speakSentence(text) {
   utter.lang = enVoice ? enVoice.lang : 'en-US';
   speechSynthesis.cancel();
   speechSynthesis.speak(utter);
+}
+
+// 指定腔調朗讀：優先挑該腔調的系統語音，挑不到就退回預設語音。
+// 用在單字層級，句子仍走 speakSentence（任意句子沒有真人錄音可用）。
+function speakWithAccent(text, langPrefix) {
+  if (!('speechSynthesis' in window)) {
+    toast('此瀏覽器不支援語音朗讀');
+    return;
+  }
+  const voices = speechSynthesis.getVoices();
+  const match = voices.find((v) => v.lang && v.lang.replace('_', '-').toLowerCase().startsWith(langPrefix));
+  const utter = new SpeechSynthesisUtterance(text);
+  if (match) utter.voice = match;
+  utter.lang = match ? match.lang : langPrefix;
+  speechSynthesis.cancel();
+  speechSynthesis.speak(utter);
+}
+
+// 播放單字發音：卡片上有真人音檔就播真人，沒有就退回合成語音。
+// 不等網路——音檔載入失敗會立刻改用合成，避免使用者按了沒反應。
+function playWordAudio(word, accentEntry, langPrefix) {
+  const audioUrl = accentEntry && accentEntry.audio;
+  if (!audioUrl) {
+    speakWithAccent(word, langPrefix);
+    return;
+  }
+  const audio = new Audio(audioUrl);
+  audio.play().catch(() => speakWithAccent(word, langPrefix));
+}
+
+// 字卡層級的單字發音入口：有真人音檔優先用，兩種腔調都有時預設美式
+function speakCardWord(card) {
+  if (!card || !card.word) return;
+  const accents = card.accents || {};
+  const preferred = (accents.us && accents.us.audio) ? accents.us : ((accents.uk && accents.uk.audio) ? accents.uk : null);
+  const lang = preferred === accents.uk ? 'en-gb' : 'en-us';
+  playWordAudio(card.word, preferred, lang);
 }
 
 let reviewQueue = [];
@@ -2195,7 +2322,7 @@ function renderManageList() {
         <div class="min-w-0 flex-1">
           <div class="flex items-baseline justify-between gap-2">
             <span class="flex items-center gap-1.5">
-              <p class="font-serif text-paper">${escapeHtml(card.word)}</p>
+              <button class="manage-open-btn font-serif text-paper hover:text-amber underline decoration-dotted decoration-hair underline-offset-4 text-left" title="查看／編輯這張字卡">${escapeHtml(card.word)}</button>
               <button class="manage-speak-btn text-muted hover:text-amber shrink-0" title="播放發音">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4V5Z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/></svg>
               </button>
@@ -2222,6 +2349,11 @@ function renderManageList() {
       document.getElementById('manageSelectAll').checked = manageSelected.size === list.length;
     });
 
+    row.querySelector('.manage-open-btn').addEventListener('click', (e) => {
+      e.stopPropagation();
+      openCardDetail(card.id);
+    });
+
     // 語境句預設兩行截斷，點擊展開/收合完整內容
     row.querySelector('.sentence-preview').addEventListener('click', (e) => {
       e.target.classList.toggle('line-clamp-2');
@@ -2229,7 +2361,7 @@ function renderManageList() {
 
     row.querySelector('.manage-speak-btn').addEventListener('click', (e) => {
       e.stopPropagation();
-      speakSentence(card.word);
+      speakCardWord(card);
     });
 
     row.querySelector('.manage-youglish-btn').addEventListener('click', (e) => {
@@ -2338,6 +2470,7 @@ function switchPage(page) {
   });
   if (page === 'review') startReview();
   if (page === 'manage') renderManagePage();
+  if (page === 'detail') renderDetailPage();
 }
 
 document.querySelectorAll('.tab-btn').forEach((btn) => {
@@ -2346,6 +2479,144 @@ document.querySelectorAll('.tab-btn').forEach((btn) => {
 
 document.getElementById('goManageBtn').addEventListener('click', () => switchPage('manage'));
 document.getElementById('manageBackBtn').addEventListener('click', () => switchPage('home'));
+
+/* =========================================================
+   字卡詳細／編輯頁
+   ========================================================= */
+
+let detailCardId = null;
+
+// 熟練度分級沿用 Anki 的成熟卡標準：間隔滿 21 天視為進入長期記憶。
+// 之後首頁的進度圖也會用同一套分級，兩邊要一致才不會互相矛盾。
+function getMasteryTier(card) {
+  const interval = card.interval || 0;
+  if (interval >= 21) return { key: 'mature', label: '已記住', hint: '間隔已拉到 21 天以上，進入長期記憶' };
+  if (interval >= 7) return { key: 'young', label: '熟悉中', hint: '間隔 7 天以上，開始穩定了' };
+  return { key: 'new', label: '剛認識', hint: '還在短期記憶，需要密集複習' };
+}
+
+function renderDetailAccents(card) {
+  const container = document.getElementById('detailAccents');
+  container.innerHTML = '';
+  const accents = card.accents || {};
+  const usText = (accents.us && accents.us.text) || '';
+  const ukText = (accents.uk && accents.uk.text) || '';
+
+  // 只有在兩種腔調的音標真的不一樣時才分開顯示。多數單字兩邊唸法相同，
+  // 硬放兩顆按鈕只會讓畫面變擠又沒有多給資訊。
+  const distinct = usText && ukText && usText !== ukText;
+  const entries = distinct
+    ? [{ label: '美式', accent: accents.us, lang: 'en-us' }, { label: '英式', accent: accents.uk, lang: 'en-gb' }]
+    : [{ label: '發音', accent: accents.us || accents.uk || null, lang: 'en-us' }];
+
+  entries.forEach(({ label, accent, lang }) => {
+    const text = (accent && accent.text) || card.phonetic || '';
+    const isReal = Boolean(accent && accent.audio);
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'btn-quiet px-3 py-2 rounded-lg text-sm flex items-center gap-2';
+    btn.innerHTML =
+      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4V5Z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/></svg>' +
+      `<span>${escapeHtml(label)}</span>` +
+      (text ? `<span class="font-mono text-xs text-muted">${escapeHtml(text)}</span>` : '') +
+      `<span class="specimen-tag">${isReal ? '真人' : '合成'}</span>`;
+    btn.addEventListener('click', () => playWordAudio(card.word, accent, lang));
+    container.appendChild(btn);
+  });
+}
+
+function renderDetailPage() {
+  const card = CARDS.find((c) => c.id === detailCardId);
+  if (!card) {
+    switchPage('manage');
+    return;
+  }
+
+  document.getElementById('detailWord').textContent = card.word;
+  document.getElementById('detailMeaning').value = card.zhDefinition || '';
+  document.getElementById('detailEnDefinition').value = card.enDefinition || '';
+  document.getElementById('detailSentence').value = card.sentence || '';
+  document.getElementById('detailSentenceZh').value = card.sentenceZh || '';
+
+  const tier = getMasteryTier(card);
+  document.getElementById('detailStage').textContent = tier.label;
+  document.getElementById('detailStageHint').textContent = tier.hint;
+  document.getElementById('detailReps').textContent = card.reps || 0;
+  document.getElementById('detailInterval').textContent = (card.interval || 0) + ' 天';
+  document.getElementById('detailDueDate').textContent = card.dueDate || '—';
+  document.getElementById('detailSource').textContent = stripSourceTime(card.source);
+
+  renderDetailAccents(card);
+
+  // 舊卡沒有腔調資料，在這裡補查一次並存回卡片，讓它自己慢慢補齊
+  if (!card.accents) {
+    fetchAccentsFor(card.word).then((accents) => {
+      if (!accents || (!accents.us.audio && !accents.uk.audio)) return;
+      const target = CARDS.find((c) => c.id === card.id);
+      if (!target) return;
+      target.accents = accents;
+      touchCard(target);
+      persist();
+      if (detailCardId === card.id) renderDetailAccents(target);
+    });
+  }
+}
+
+function openCardDetail(cardId) {
+  detailCardId = cardId;
+  switchPage('detail');
+}
+
+document.getElementById('detailBackBtn').addEventListener('click', () => switchPage('manage'));
+
+document.getElementById('detailSpeakSentenceBtn').addEventListener('click', () => {
+  const sentence = document.getElementById('detailSentence').value.trim();
+  if (sentence) speakSentence(sentence);
+});
+
+document.getElementById('detailYouglishBtn').addEventListener('click', () => {
+  const card = CARDS.find((c) => c.id === detailCardId);
+  if (card) openYouglish(card.word);
+});
+
+document.getElementById('detailSaveBtn').addEventListener('click', () => {
+  const card = CARDS.find((c) => c.id === detailCardId);
+  if (!card) return;
+  card.zhDefinition = document.getElementById('detailMeaning').value.trim();
+  card.enDefinition = document.getElementById('detailEnDefinition').value.trim();
+  card.sentence = document.getElementById('detailSentence').value.trim();
+  card.sentenceZh = document.getElementById('detailSentenceZh').value.trim();
+  touchCard(card);
+  persist();
+  toast('已儲存變更');
+});
+
+document.getElementById('detailResetBtn').addEventListener('click', () => {
+  const card = CARDS.find((c) => c.id === detailCardId);
+  if (!card) return;
+  if (!confirm('確定要重設這張卡的複習進度嗎？它會回到「剛認識」，今天重新排入複習。')) return;
+  card.reps = 0;
+  card.interval = 0;
+  card.ef = 2.5;
+  card.dueDate = todayISO();
+  card.lastReviewed = null;
+  touchCard(card);
+  persist();
+  renderDetailPage();
+  toast('已重設複習進度');
+});
+
+document.getElementById('detailDeleteBtn').addEventListener('click', () => {
+  const card = CARDS.find((c) => c.id === detailCardId);
+  if (!card) return;
+  if (!confirm(`確定要刪除「${card.word}」這張字卡嗎？此動作無法復原。`)) return;
+  recordDeletions([card]);
+  CARDS = CARDS.filter((c) => c.id !== card.id);
+  detailCardId = null;
+  persist();
+  switchPage('manage');
+  toast('已刪除字卡');
+});
 
 /* =========================================================
    初始化
