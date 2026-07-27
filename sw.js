@@ -2,7 +2,7 @@
 // v3.2 修正：index.html／sw.js 這種常常會改版的檔案改成「網路優先」，
 // 避免瀏覽器內建的 SW 更新節流機制（最長可能一天才檢查一次）讓使用者
 // 一直看到舊版；圖示、辭典這種幾乎不會變的檔案維持「快取優先」節省流量。
-const CACHE_NAME = 'eng-immersion-v9';
+const CACHE_NAME = 'eng-immersion-v10';
 const CORE_ASSETS = [
   './',
   './index.html',
@@ -85,4 +85,23 @@ self.addEventListener('fetch', (event) => {
         .catch(() => cached);
     })
   );
+});
+
+// Web Push：訂閱時用 userVisibleOnly: true，代表每次收到 push
+// 都必須顯示通知，不能靜默處理（瀏覽器規範強制要求）。
+// 提醒內容固定不變，不需要解析 payload。
+self.addEventListener('push', (event) => {
+  event.waitUntil(
+    self.registration.showNotification('記憶即將遺忘', {
+      body: '有字卡到期了，打開 App 複習一下',
+      icon: './icon-192.png',
+      badge: './icon-192.png',
+      tag: 'due-reminder'
+    })
+  );
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  event.waitUntil(clients.openWindow('./index.html'));
 });

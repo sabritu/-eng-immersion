@@ -145,15 +145,6 @@
     </button>
 
     <div class="specimen-card p-4">
-      <p class="specimen-tag mb-3">複習提醒通知</p>
-      <button id="requestNotifyBtn" class="btn-quiet text-sm px-3 py-2.5 rounded-lg w-full flex items-center justify-center gap-2">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-        開啟到期提醒通知
-      </button>
-      <p id="notifyStatus" class="text-xs text-muted mt-2"></p>
-    </div>
-
-    <div class="specimen-card p-4">
       <p class="specimen-tag mb-3">複習語音</p>
       <select id="voiceSelect" class="w-full bg-surface2 border border-hair rounded-lg p-2 text-sm mb-2"></select>
       <button id="voicePreviewBtn" class="btn-quiet text-sm px-3 py-2 rounded-lg w-full">試聽這個語音</button>
@@ -278,15 +269,38 @@
       </div>
       <p id="importResult" class="text-xs"></p>
     </div>
+    <h2 class="text-lg font-serif text-paper pt-2">提醒設定</h2>
+
     <div class="specimen-card p-4 space-y-3">
-      <p class="specimen-tag">LINE 到期提醒（選用）</p>
-      <p class="text-xs text-muted">綁定後，有字卡到期的那天會收到 LINE 通知；沒到期就不會打擾你。</p>
+      <p class="specimen-tag">瀏覽器推播（主要）</p>
+      <p class="text-xs text-muted">App 關著也收得到。iPhone 需要先把 App 加到主畫面才能使用；電腦和 Android 直接開就能用。</p>
+      <button id="enablePushBtn" class="btn-quiet w-full py-2.5 rounded-lg text-sm flex items-center justify-center gap-2">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+        開啟到期提醒
+      </button>
+      <p id="pushStatus" class="text-xs text-muted"></p>
+    </div>
+
+    <div class="specimen-card p-4 space-y-3">
+      <p class="specimen-tag">LINE 提醒（備用）</p>
+      <p class="text-xs text-muted">不想開瀏覽器通知、或用 iPhone 但沒把 App 加到主畫面，可以改用這個。綁定後，有字卡到期的那天會收到 LINE 通知；沒到期就不會打擾你。</p>
       <p id="linePairStatus" class="text-sm">尚未綁定</p>
       <button id="lineAddFriendBtn" class="btn-quiet w-full py-2.5 rounded-lg text-sm">① 加「英英美代誌」好友</button>
       <button id="linePairBtn" class="btn-quiet w-full py-2.5 rounded-lg text-sm">② 開啟 LINE 送出綁定碼</button>
       <button id="lineCheckPairBtn" class="btn-quiet w-full py-2.5 rounded-lg text-sm">③ 我送出了，檢查綁定結果</button>
       <p class="text-xs text-muted">你的綁定碼：<span id="linePairCode" class="text-paper">—</span></p>
     </div>
+
+    <div class="specimen-card p-4 space-y-3">
+      <p class="specimen-tag">App 圖示數字</p>
+      <p class="text-xs text-muted">只會在 App 圖示上顯示待複習張數（一個小紅點數字），不會在 App 關著時發出提醒——真的要 App 關著也收得到，請用上面兩個。</p>
+      <button id="requestNotifyBtn" class="btn-quiet text-sm px-3 py-2.5 rounded-lg w-full flex items-center justify-center gap-2">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+        在 App 圖示顯示待複習數量
+      </button>
+      <p id="notifyStatus" class="text-xs text-muted mt-2"></p>
+    </div>
+
     <div class="pt-2 text-center text-xs text-muted space-y-1">
       <p><a href="./guide.html" target="_blank" rel="noopener" class="hover:text-paper">使用手冊</a></p>
       <p>製作 · <a href="https://sweetenbud.com/" target="_blank" rel="noopener" class="hover:text-paper">甜甜草行銷工作室</a></p>
@@ -1510,24 +1524,13 @@ function updateAppBadge(n) {
   }
 }
 
-// 開啟 App 或切回前景時，檢查到期字卡並觸發一次系統通知（每日最多一次，避免騷擾）
+// 開啟 App 或切回前景時，更新儀表板數字並同步到期日給提醒 Worker。
+// 不在這裡發系統通知——App 開著時發通知只是在提醒使用者一件畫面上
+// 已經顯示的事，真正的「App 關著也收得到」交給 Web Push 和 LINE。
 function checkDueOnVisible() {
   if (document.visibilityState !== 'visible') return;
-  const due = getDueCards();
   renderDashboard();
   syncDueDateToLine();
-  if (due.length === 0) return;
-  if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
-
-  const settings = loadSettings();
-  if (settings.lastNotifiedDate === todayISO()) return;
-
-  new Notification('記憶即將遺忘', {
-    body: `今日有 ${due.length} 張字卡待複習`,
-    icon: './icon-192.png'
-  });
-  settings.lastNotifiedDate = todayISO();
-  saveSettings(settings);
 }
 
 document.addEventListener('visibilitychange', checkDueOnVisible);
@@ -1546,6 +1549,19 @@ const LINE_OA_ID = '@548ixlun';
 // 字母表排除 0/O、1/I/L 這類長得很像的字元，使用者要用眼睛核對時比較不會看錯
 const PAIR_CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 
+// Web Push 訂閱用的公鑰，只是身分辨識用，不是機密（私鑰只在 Worker 端）
+const VAPID_PUBLIC_KEY = 'BFWVDCuXCgusL59F7Bfbu30sVRXdv4J2VmQhiiGxBfpSRuIK6tXTLaagb8FBv50Ze_bWfvXvj9TN5NrZ4rYyXsk';
+
+// pushManager.subscribe 只吃 Uint8Array，這裡把 base64url 公鑰轉過去
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; i++) outputArray[i] = rawData.charCodeAt(i);
+  return outputArray;
+}
+
 // 每台裝置一組配對碼，第一次要用時才產生，之後固定不變
 function getOrCreatePairCode() {
   const settings = loadSettings();
@@ -1557,10 +1573,11 @@ function getOrCreatePairCode() {
   return code;
 }
 
-// 把下次到期日同步給 LINE 提醒 Worker（沒綁定過就不用浪費一次連線）
+// 把下次到期日同步給提醒 Worker（LINE 和 Web Push 共用同一組配對碼與同一個
+// 到期日，沒綁過任何一種提醒管道就不用浪費一次連線）
 async function syncDueDateToLine() {
   const settings = loadSettings();
-  if (!settings.linePaired || !settings.linePairCode) return;
+  if ((!settings.linePaired && !settings.pushEnabled) || !settings.linePairCode) return;
   const dueDate = getNextDueDate();
   if (!dueDate) return;
   try {
@@ -1626,6 +1643,73 @@ async function syncDueDateToLine() {
   });
 
   renderStatus();
+})();
+
+// Web Push：App 關著也收得到的主要提醒管道。訂閱只送 endpoint 給 Worker，
+// 不送 p256dh/auth（那兩個是 payload 加密用的，這裡送的是無內容推播）。
+(function initWebPush() {
+  const enableBtn = document.getElementById('enablePushBtn');
+  const statusEl = document.getElementById('pushStatus');
+  if (!enableBtn) return;
+
+  function supported() {
+    return 'serviceWorker' in navigator && 'PushManager' in window;
+  }
+
+  async function updatePushStatus() {
+    if (!supported()) {
+      statusEl.textContent = '此瀏覽器不支援背景推播';
+      return;
+    }
+    if (Notification.permission === 'denied') {
+      statusEl.textContent = '已被封鎖，請至瀏覽器/系統設定手動開啟通知權限';
+      return;
+    }
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.getSubscription();
+      statusEl.textContent = sub ? '已開啟 ✅' : '尚未開啟';
+    } catch (e) {
+      statusEl.textContent = '尚未開啟';
+    }
+  }
+
+  enableBtn.addEventListener('click', async () => {
+    if (!supported()) {
+      toast('此瀏覽器不支援背景推播，可以改用下面的 LINE 提醒');
+      return;
+    }
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      let sub = await reg.pushManager.getSubscription();
+      if (!sub) {
+        sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
+        });
+      }
+      const code = getOrCreatePairCode();
+      await fetch(`${LINE_WORKER_URL}/subscribe-push`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code, endpoint: sub.endpoint })
+      });
+      const settings = loadSettings();
+      settings.pushEnabled = true;
+      saveSettings(settings);
+      toast('已開啟到期提醒');
+      syncDueDateToLine();
+      updatePushStatus();
+    } catch (e) {
+      if (Notification.permission === 'denied') {
+        toast('通知權限被拒絕，請至瀏覽器設定手動開啟');
+      } else {
+        toast('開啟失敗，請確認網路連線後再試一次');
+      }
+    }
+  });
+
+  updatePushStatus();
 })();
 
 document.getElementById('requestNotifyBtn').addEventListener('click', async () => {
