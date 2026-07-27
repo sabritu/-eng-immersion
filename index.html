@@ -269,6 +269,21 @@
       </div>
       <p id="importResult" class="text-xs"></p>
     </div>
+
+    <div class="specimen-card p-4 space-y-3">
+      <p class="specimen-tag">手機／電腦同步</p>
+      <p class="text-xs text-muted">兩台裝置填同一組同步碼，按下同步就會互相補齊。同一個單字兩邊都有時，保留比較晚修改的那一版。</p>
+      <div class="flex gap-2">
+        <input id="syncCodeInput" type="text" inputmode="text" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="6"
+          placeholder="同步碼" class="flex-1 bg-surface2 border border-hair rounded-lg p-2.5 text-sm font-mono tracking-widest uppercase outline-none placeholder:text-muted placeholder:tracking-normal placeholder:normal-case focus:border-amber">
+        <button id="syncSaveCodeBtn" class="btn-quiet px-4 py-2.5 rounded-lg text-sm whitespace-nowrap">儲存</button>
+      </div>
+      <button id="syncNowBtn" class="btn-primary w-full py-2.5 rounded-lg text-sm">立即同步</button>
+      <p id="syncStatus" class="text-xs text-muted"></p>
+      <p class="text-xs text-muted">還沒有同步碼？在其中一台按「產生同步碼」，再把它填到另一台。</p>
+      <button id="syncGenerateBtn" class="btn-quiet w-full py-2 rounded-lg text-xs">產生同步碼</button>
+    </div>
+
     <h2 class="text-lg font-serif text-paper pt-2">提醒設定</h2>
 
     <div class="specimen-card p-4 space-y-3">
@@ -443,6 +458,15 @@ function migrateCard(card) {
   if (card.batchId === undefined) card.batchId = 'legacy';
   // 舊版 source 只是技術標記（pending/manual），不是給人看的來源描述，統一歸入歷史資料
   if (!card.source || card.source === 'pending' || card.source === 'manual') card.source = '歷史資料';
+  // 跨裝置同步靠這個時間戳決定同一張卡要留哪一版。舊卡沒有這個欄位，
+  // 用既有的複習時間或建立時間補上，不會憑空變成「剛剛改過」而蓋掉另一台的資料。
+  if (card.updatedAt === undefined) card.updatedAt = card.lastReviewed || card.createdAt || '1970-01-01T00:00:00.000Z';
+  return card;
+}
+
+// 每次改動字卡都要呼叫，同步時才知道哪一版比較新
+function touchCard(card) {
+  card.updatedAt = new Date().toISOString();
   return card;
 }
 
@@ -503,6 +527,76 @@ let CARDS = loadCards();
 function persist() {
   saveCards(CARDS);
   renderDashboard();
+}
+
+/* ---- 跨裝置同步用的刪除紀錄（墓碑）----
+   單純比對兩邊的字卡清單無法分辨「對方新增了這張」和「我刪掉了這張」，
+   合併時被刪掉的卡會從另一台復活。這裡記下「哪個單字在什麼時候被刪掉」，
+   合併時只要對方那張卡的 updatedAt 早於刪除時間，就視為已刪除、不要收回來。
+   紀錄只存單字和時間，超過 90 天自動清掉，不會無限長大。 */
+const DELETION_KEEP_DAYS = 90;
+
+function loadDeletions() {
+  const settings = loadSettings();
+  return settings.deletedCards || {};
+}
+
+function saveDeletions(deletions) {
+  const settings = loadSettings();
+  settings.deletedCards = deletions;
+  saveSettings(settings);
+}
+
+function recordDeletions(cards) {
+  const deletions = loadDeletions();
+  const now = new Date().toISOString();
+  cards.forEach((card) => {
+    if (card && card.id) deletions[card.id] = now;
+  });
+  saveDeletions(pruneDeletions(deletions));
+}
+
+function pruneDeletions(deletions) {
+  const cutoff = new Date(Date.now() - DELETION_KEEP_DAYS * 86400000).toISOString();
+  const kept = {};
+  Object.keys(deletions).forEach((id) => {
+    if (deletions[id] > cutoff) kept[id] = deletions[id];
+  });
+  return kept;
+}
+
+/* ---- 合併兩份字卡 ----
+   同一個單字在兩台裝置上是同一張卡（字卡的 id 就是單字本身），
+   衝突時保留 updatedAt 比較新的那一版；任一邊刪除過且刪除時間較晚的，
+   兩邊都不保留。這個函式不碰 localStorage，純粹算出結果，方便測試。 */
+function mergeCardSets(localCards, remoteCards, mergedDeletions) {
+  const byId = new Map();
+  const takeNewer = (card) => {
+    if (!card || !card.id) return;
+    const existing = byId.get(card.id);
+    if (!existing || (card.updatedAt || '') > (existing.updatedAt || '')) {
+      byId.set(card.id, card);
+    }
+  };
+  localCards.forEach(takeNewer);
+  remoteCards.forEach(takeNewer);
+
+  const result = [];
+  byId.forEach((card, id) => {
+    const deletedAt = mergedDeletions[id];
+    // 刪除之後又編輯過的卡片要留下來（使用者顯然又把它加回來了）
+    if (deletedAt && (card.updatedAt || '') <= deletedAt) return;
+    result.push(card);
+  });
+  return result;
+}
+
+function mergeDeletionMaps(localDeletions, remoteDeletions) {
+  const merged = Object.assign({}, localDeletions);
+  Object.keys(remoteDeletions || {}).forEach((id) => {
+    if (!merged[id] || remoteDeletions[id] > merged[id]) merged[id] = remoteDeletions[id];
+  });
+  return pruneDeletions(merged);
 }
 
 function todayISO() {
@@ -1152,8 +1246,9 @@ document.getElementById('modalSaveBtn').addEventListener('click', () => {
     c.sentence = sentence || c.sentence;
     c.sentenceZh = sentenceZh;
     c.status = 'active';
+    touchCard(c);
   } else {
-    CARDS.push({
+    CARDS.push(touchCard({
       ...makeInboxCard(word, sentence, generateBatchId(), `單字查詢建卡．${formatBatchTimestamp()}`),
       phonetic,
       zhDefinition,
@@ -1161,7 +1256,7 @@ document.getElementById('modalSaveBtn').addEventListener('click', () => {
       tags,
       sentenceZh,
       status: 'active'
-    });
+    }));
   }
   persist();
   renderInboxList();
@@ -1195,7 +1290,7 @@ function sm2Update(card, quality) {
   const ef = card.ef + (0.1 - (5 - quality) * (0.08 + (5 - quality) * 0.02));
   card.ef = Math.max(1.3, ef);
   card.lastReviewed = new Date().toISOString();
-  return card;
+  return touchCard(card);
 }
 
 function getDueCards() {
@@ -1460,6 +1555,9 @@ document.getElementById('undoScoreBtn').addEventListener('click', () => {
   card.dueDate = dueDate;
   card.ef = ef;
   card.lastReviewed = lastReviewed;
+  // 復原本身也是一次異動，updatedAt 要往前推而不是還原成舊值，
+  // 否則另一台裝置會誤判自己那份比較新，把復原的結果又蓋回去
+  touchCard(card);
   persist();
   reviewQueue.unshift(card);
   lastScoreUndo = null;
@@ -1740,6 +1838,103 @@ async function syncDueDateToLine() {
   updatePushStatus();
 })();
 
+/* ---- 手機／電腦同步 ----
+   流程刻意是「先取回 → 本機合併 → 再上傳合併結果」，兩台都跑過一次之後
+   兩邊就會一致。合併在裝置上做，Worker 只當保管箱，不解讀內容。 */
+(function initCardSync() {
+  const codeInput = document.getElementById('syncCodeInput');
+  const saveCodeBtn = document.getElementById('syncSaveCodeBtn');
+  const generateBtn = document.getElementById('syncGenerateBtn');
+  const syncBtn = document.getElementById('syncNowBtn');
+  const statusEl = document.getElementById('syncStatus');
+  if (!syncBtn) return;
+
+  function loadSyncCode() {
+    return loadSettings().syncCode || '';
+  }
+
+  function renderSyncState() {
+    const code = loadSyncCode();
+    codeInput.value = code;
+    const settings = loadSettings();
+    statusEl.textContent = settings.lastSyncedAt
+      ? `上次同步：${settings.lastSyncedAt.slice(0, 16).replace('T', ' ')}`
+      : (code ? '尚未同步過' : '尚未設定同步碼');
+  }
+
+  saveCodeBtn.addEventListener('click', () => {
+    const code = codeInput.value.trim().toUpperCase();
+    if (!/^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{6}$/.test(code)) {
+      toast('同步碼格式不對，應為 6 位英數字');
+      return;
+    }
+    const settings = loadSettings();
+    settings.syncCode = code;
+    saveSettings(settings);
+    renderSyncState();
+    toast('已儲存同步碼');
+  });
+
+  generateBtn.addEventListener('click', () => {
+    const bytes = crypto.getRandomValues(new Uint8Array(6));
+    const code = Array.from(bytes, (b) => PAIR_CODE_ALPHABET[b % PAIR_CODE_ALPHABET.length]).join('');
+    const settings = loadSettings();
+    settings.syncCode = code;
+    saveSettings(settings);
+    renderSyncState();
+    toast('已產生同步碼，請在另一台裝置填入同一組');
+  });
+
+  syncBtn.addEventListener('click', async () => {
+    const code = loadSyncCode();
+    if (!code) {
+      toast('請先設定或產生同步碼');
+      return;
+    }
+
+    syncBtn.disabled = true;
+    statusEl.textContent = '同步中…';
+    try {
+      const pullRes = await fetch(`${LINE_WORKER_URL}/sync-cards?code=${encodeURIComponent(code)}`);
+      const remote = await pullRes.json();
+      if (remote.error) throw new Error(remote.error);
+
+      const beforeCount = CARDS.length;
+      const remoteCards = (remote.cards || []).map(migrateCard);
+      const mergedDeletions = mergeDeletionMaps(loadDeletions(), remote.deletedCards || {});
+      const mergedCards = mergeCardSets(CARDS, remoteCards, mergedDeletions);
+
+      CARDS = mergedCards;
+      saveDeletions(mergedDeletions);
+      persist();
+      renderInboxList();
+
+      const pushRes = await fetch(`${LINE_WORKER_URL}/sync-cards`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code, cards: CARDS, deletedCards: mergedDeletions })
+      });
+      const pushed = await pushRes.json();
+      if (pushed.error) throw new Error(pushed.error);
+
+      const settings = loadSettings();
+      settings.lastSyncedAt = new Date().toISOString();
+      saveSettings(settings);
+      renderSyncState();
+
+      const added = CARDS.length - beforeCount;
+      toast(added > 0 ? `同步完成，收到 ${added} 張新字卡` : '同步完成，資料已是最新');
+    } catch (e) {
+      statusEl.textContent = '同步失敗，請確認網路連線後再試一次';
+      toast('同步失敗');
+    } finally {
+      syncBtn.disabled = false;
+    }
+  });
+
+  renderSyncState();
+})();
+
 // 註：原本這裡有一顆單獨要求通知權限的按鈕，用來點亮 App 圖示上的數字角標。
 // 但 setAppBadge（顯示數字）在 Android Chrome 沒有實作，那顆按鈕等於承諾了
 // 一個不會發生的效果。真正會讓圖示出現紅點的是「通知欄裡有未讀通知」，
@@ -2017,6 +2212,7 @@ document.getElementById('manageDeleteSelectedBtn').addEventListener('click', () 
   }
   const confirmed = confirm(`確定要刪除已選取的 ${manageSelected.size} 張字卡嗎？此動作無法復原。`);
   if (!confirmed) return;
+  recordDeletions(CARDS.filter((c) => manageSelected.has(c.id)));
   CARDS = CARDS.filter((c) => !manageSelected.has(c.id));
   manageSelected = new Set();
   persist();
@@ -2038,6 +2234,7 @@ document.getElementById('manageDeleteBatchBtn').addEventListener('click', () => 
   }
   const confirmed = confirm(`確定要刪除整批共 ${count} 張字卡嗎？此動作無法復原。`);
   if (!confirmed) return;
+  recordDeletions(CARDS.filter((c) => c.batchId === batchId));
   CARDS = CARDS.filter((c) => c.batchId !== batchId);
   manageSelected = new Set();
   persist();
