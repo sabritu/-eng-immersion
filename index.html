@@ -797,6 +797,12 @@ function splitSentences(text) {
   return parts.length ? parts : [trimmed];
 }
 
+// 單字查詢建卡（點生字、貼上手動查詢）當天全部歸同一個批次，
+// 不然一天查十個字就變十個各 1 張的批次，批次下拉選單直接洗版
+function dailyLookupBatchId() {
+  return 'lookup-' + todayISO();
+}
+
 function makeInboxCard(word, sentence, batchId, source) {
   return {
     id: word,
@@ -1262,7 +1268,7 @@ document.getElementById('modalSaveBtn').addEventListener('click', () => {
     touchCard(c);
   } else {
     CARDS.push(touchCard({
-      ...makeInboxCard(word, sentence, generateBatchId(), `單字查詢建卡．${formatBatchTimestamp()}`),
+      ...makeInboxCard(word, sentence, dailyLookupBatchId(), `單字查詢建卡．${todayISO()}`),
       phonetic,
       zhDefinition,
       enDefinition,
