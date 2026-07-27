@@ -1433,6 +1433,7 @@ document.getElementById('downloadJsonBtn').addEventListener('click', () => {
   a.download = `english-cards-${todayISO()}.json`;
   a.click();
   URL.revokeObjectURL(url);
+  toast('已下載 JSON 檔案');
 });
 
 // CSV 逐欄位跳脫：含逗號、引號、換行的欄位要用雙引號包起來，欄位裡的雙引號要變成兩個雙引號
@@ -1456,6 +1457,7 @@ document.getElementById('downloadCsvBtn').addEventListener('click', () => {
   a.download = `english-cards-${todayISO()}.csv`;
   a.click();
   URL.revokeObjectURL(url);
+  toast('已下載 CSV 檔案');
 });
 
 document.getElementById('importFileBtn').addEventListener('click', () => {
