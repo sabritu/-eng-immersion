@@ -386,7 +386,7 @@
     <h1>英英美代誌</h1>
   </div>
 </div>
-<p class="lede">這份文件涵蓋裝進手機主畫面、手機上隨手收藏英文句子、電腦上邊上網邊收藏三件事，照你需要的部分看就好，不用整份從頭讀到尾。</p>
+<p class="lede">這份文件涵蓋裝進手機主畫面、隨手收藏句子、管理與編輯字卡、設定複習提醒這幾件事，照你需要的部分看就好，不用整份從頭讀到尾。</p>
 
 <div class="cta-row">
   <a class="cta-btn" href="https://sabritu.github.io/-eng-immersion/" target="_blank" rel="noopener">開啟 App 網頁版 →</a>
@@ -400,7 +400,9 @@
   <a href="#install"><span class="n">01</span> 裝進手機主畫面</a>
   <a href="#capture"><span class="n">02</span> 手機隨手收藏</a>
   <a href="#desktop"><span class="n">03</span> 桌機收藏工具</a>
-  <a href="#backup"><span class="n">04</span> 資料備份提醒</a>
+  <a href="#manage"><span class="n">04</span> 字卡管理與編輯</a>
+  <a href="#reminders"><span class="n">05</span> 複習提醒設定</a>
+  <a href="#backup"><span class="n">06</span> 資料備份</a>
 </nav>
 
 <section class="block" id="install">
@@ -621,7 +623,7 @@
   <script type="text/plain" id="script-source">// ==UserScript==
 // @name         英文習得 - 網頁選字收藏 + YouTube 逐字稿收藏
 // @namespace    sweetenbud.eng-immersion
-// @version      1.3
+// @version      1.5
 // @description  任何網頁選取英文句子都能一鍵送進字卡 App；YouTube 影片頁面額外有逐句收藏與整份逐字稿傳送功能
 // @match        *://*/*
 // @grant        GM_setValue
@@ -634,18 +636,13 @@
   'use strict';
 
   // ---------------------------------------------------------
-  // 設定：PWA 網址（第一次使用時會跳出詢問，之後存起來不用再填）
+  // 設定：PWA 網址（固定寫死，全部人共用同一個部署，不用再貼）
+  // 萬一之後真的要換網址，用 Tampermonkey 選單「設定 PWA 網址」覆蓋即可
   // ---------------------------------------------------------
+  const DEFAULT_PWA_URL = 'https://sabritu.github.io/-eng-immersion/';
+
   function getPwaUrl() {
-    let url = GM_getValue('pwaUrl', '');
-    if (!url) {
-      url = window.prompt('請貼上你的英文習得 PWA 網址（例如 https://你的帳號.github.io/eng-immersion/）：', '');
-      if (url) {
-        url = url.trim().replace(/\/+$/, '') + '/';
-        GM_setValue('pwaUrl', url);
-      }
-    }
-    return url;
+    return GM_getValue('pwaUrl', '') || DEFAULT_PWA_URL;
   }
 
   GM_registerMenuCommand('設定 PWA 網址', () => {
@@ -727,7 +724,7 @@
   // ---------------------------------------------------------
   if (!location.hostname.includes('youtube.com')) return;
 
-  // 傳送整份逐字稿：用 postMessage 傳給新開的 PWA 分頁
+  // 傳送逐字稿：用 postMessage 傳給新開的 PWA 分頁
   // （不走網址參數，因為完整逐字稿常常長到超過瀏覽器網址長度上限）
   function sendBulkTranscript(text) {
     const pwaUrl = getPwaUrl();
@@ -766,7 +763,7 @@
     }, 300);
   }
 
-  // 抓取目前頁面上的完整逐字稿文字（新舊兩種版面都支援）
+  // 抓取目前畫面上已展開的逐字稿面板文字（新舊兩種版面都支援）
   function collectAllTranscriptText() {
     const oldSegs = Array.from(document.querySelectorAll('ytd-transcript-segment-renderer'))
       .map((seg) => seg.querySelector('.segment-text'))
@@ -780,27 +777,172 @@
     return all.join(' ');
   }
 
-  // 浮動按鈕：一鍵把目前影片的完整逐字稿傳到 PWA
+  // =========================================================
+  // 判斷這支影片到底有沒有逐字稿（不必打開面板）
+  //
+  // YouTube 會先把逐字稿面板的「容器」放進網頁裡再隱藏起來，等使用者點才填內容；
+  // 沒有逐字稿的影片則根本不會有這個容器。所以查容器在不在，就等於查有沒有逐字稿。
+  // =========================================================
+  function currentVideoId() {
+    return new URLSearchParams(location.search).get('v') || '';
+  }
+
+  function isWatchPage() {
+    return location.pathname === '/watch' && !!currentVideoId();
+  }
+
+  function findTranscriptPanel() {
+    return document.querySelector(
+      'ytd-engagement-panel-section-list-renderer[target-id="engagement-panel-searchable-transcript"]'
+    );
+  }
+
+  function hasTranscript() {
+    if (!isWatchPage()) return false;
+    return !!(
+      findTranscriptPanel() ||
+      document.querySelector('ytd-video-description-transcript-section-renderer')
+    );
+  }
+
+  // =========================================================
+  // 取得逐字稿：使用者不必自己動手點開面板
+  //   面板已經開著 → 直接讀，零等待
+  //   面板沒開     → 腳本自己點開、抓完再關掉，全程約 0.5 秒
+  //
+  // 為什麼一定要走「開面板」這條路（兩條看似更聰明的捷徑都已實測失敗）：
+  //   1. 伺服器端代抓字幕（worker/transcript-worker.js 走的路）已被 YouTube 封鎖，
+  //      實測回 HTTP 200 但內容 0 bytes，帶 cookie 也一樣。
+  //   2. 頁面內直接呼叫 /youtubei/v1/get_transcript 一律回 Precondition check failed，
+  //      連用 ytInitialData 裡 YouTube 自己準備好的 params 也不通。
+  //   結論：只有讓 YouTube 自己的程式去要資料才拿得到，所以就是點它的按鈕。
+  // =========================================================
+  function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  // 描述區沒展開時，「顯示轉錄稿」按鈕還沒被畫出來，要先把描述打開
+  function findTranscriptOpenButton() {
+    const section = document.querySelector('ytd-video-description-transcript-section-renderer');
+    return section ? section.querySelector('button') : null;
+  }
+
+  function expandDescription() {
+    const expander = document.querySelector('#description-inline-expander #expand') ||
+                     document.querySelector('tp-yt-paper-button#expand') ||
+                     document.querySelector('#expand');
+    if (expander) expander.click();
+  }
+
+  function closeTranscriptPanel(panel) {
+    const closeBtn = panel.querySelector('#visibility-button button') ||
+                     panel.querySelector('#header button[aria-label]');
+    if (closeBtn) closeBtn.click();
+  }
+
+  async function fetchTranscriptByOpeningPanel() {
+    const panel = findTranscriptPanel();
+    if (!panel) return '';
+
+    if (panel.getAttribute('visibility') === 'ENGAGEMENT_PANEL_VISIBILITY_EXPANDED') {
+      return collectAllTranscriptText();
+    }
+
+    let openBtn = findTranscriptOpenButton();
+    if (!openBtn) {
+      expandDescription();
+      await sleep(600);
+      openBtn = findTranscriptOpenButton();
+    }
+    if (!openBtn) return '';
+
+    // 抓取期間先讓面板透明，使用者不會看到畫面整個彈出來又收回去
+    const prevOpacity = panel.style.opacity;
+    panel.style.opacity = '0';
+    openBtn.click();
+
+    let text = '';
+    for (let i = 0; i < 40; i++) {   // 最多等 8 秒讓內容載完
+      await sleep(200);
+      text = collectAllTranscriptText();
+      if (text) break;
+    }
+
+    closeTranscriptPanel(panel);
+    panel.style.opacity = prevOpacity;
+    return text;
+  }
+
+  async function getTranscriptText() {
+    const onScreen = collectAllTranscriptText();
+    if (onScreen) return onScreen;
+
+    try {
+      return await fetchTranscriptByOpeningPanel();
+    } catch (e) {
+      return '';
+    }
+  }
+
+  // ---------------------------------------------------------
+  // 浮動按鈕：一鍵把目前影片的逐字稿傳到 PWA
+  // 平常只顯示短標題以免擋畫面，滑鼠移上去才展開完整名稱
+  // ---------------------------------------------------------
+  const BTN_LABEL_SHORT = '📥 收逐字稿';
+  const BTN_LABEL_FULL = '📥 傳送逐字稿到英英美代誌';
+
   function ensureBulkSendButton() {
-    if (document.getElementById('eng-bulk-send-btn')) return;
-    const btn = document.createElement('button');
+    let btn = document.getElementById('eng-bulk-send-btn');
+    if (btn) return btn;
+
+    btn = document.createElement('button');
     btn.id = 'eng-bulk-send-btn';
-    btn.textContent = '📥 傳送整份逐字稿到字卡 App';
+    btn.textContent = BTN_LABEL_SHORT;
+    btn.title = BTN_LABEL_FULL;
     btn.style.cssText = [
       'position:fixed', 'bottom:20px', 'right:20px', 'z-index:99999',
       'background:#d9a253', 'color:#14120f', 'font-weight:700',
-      'padding:10px 16px', 'border-radius:9999px', 'border:none',
-      'box-shadow:0 2px 10px rgba(0,0,0,.35)', 'cursor:pointer', 'font-size:13px'
+      'padding:9px 14px', 'border-radius:9999px', 'border:none',
+      'box-shadow:0 2px 10px rgba(0,0,0,.35)', 'cursor:pointer', 'font-size:13px',
+      'white-space:nowrap'
     ].join(';');
-    btn.addEventListener('click', () => {
-      const text = collectAllTranscriptText();
-      if (!text) {
-        alert('沒有找到逐字稿內容，請先點影片下方「顯示轉錄稿」打開字幕面板，再點一次這個按鈕。');
-        return;
-      }
-      sendBulkTranscript(text);
+
+    btn.addEventListener('mouseenter', () => {
+      if (!btn.disabled) btn.textContent = BTN_LABEL_FULL;
     });
+    btn.addEventListener('mouseleave', () => {
+      if (!btn.disabled) btn.textContent = BTN_LABEL_SHORT;
+    });
+
+    btn.addEventListener('click', async () => {
+      if (btn.disabled) return;
+      btn.disabled = true;
+      btn.textContent = '⏳ 抓取中…';
+      try {
+        const text = await getTranscriptText();
+        if (!text) {
+          alert('抓不到這支影片的逐字稿。請點影片下方「⋯更多」→「顯示轉錄稿」打開面板後，再點一次這顆按鈕。');
+          return;
+        }
+        sendBulkTranscript(text);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = BTN_LABEL_SHORT;
+      }
+    });
+
     document.body.appendChild(btn);
+    return btn;
+  }
+
+  // 只有「這支影片真的有逐字稿」時才讓按鈕出現，其餘時候一律藏起來
+  function updateBulkSendButton() {
+    const existing = document.getElementById('eng-bulk-send-btn');
+    if (hasTranscript()) {
+      ensureBulkSendButton().style.display = '';
+    } else if (existing) {
+      existing.style.display = 'none';
+    }
   }
 
   // ---------------------------------------------------------
@@ -848,14 +990,20 @@
   function injectButtons() {
     injectForVariant('ytd-transcript-segment-renderer', '.segment-text', '.segment');
     injectForVariant('transcript-segment-view-model', 'span.ytAttributedStringHost', null);
-    ensureBulkSendButton();
+    updateBulkSendButton();
   }
 
   // ---------------------------------------------------------
-  // YouTube 是 SPA，切換影片不會整頁重新載入；用 MutationObserver 持續偵測轉錄稿面板
+  // YouTube 是 SPA，切換影片不會整頁重新載入；用 MutationObserver 持續偵測轉錄稿面板。
+  // YouTube 頁面變動非常頻繁，加 300ms 緩衝避免每次微小變動都重掃一遍。
   // ---------------------------------------------------------
+  let pendingScan = null;
   const observer = new MutationObserver(() => {
-    injectButtons();
+    if (pendingScan) return;
+    pendingScan = setTimeout(() => {
+      pendingScan = null;
+      injectButtons();
+    }, 300);
   });
   observer.observe(document.body, { childList: true, subtree: true });
 
@@ -871,24 +1019,99 @@
   <div class="callout" style="margin:20px 0 12px;">
     <p class="callout-title">🎬 在 YouTube 上多兩個功能</p>
     <p>打開有字幕的影片 →「⋯更多」→「顯示轉錄稿」叫出逐字稿面板，每一行旁邊會多一個「★ 收藏這句」按鈕，單句收藏。</p>
-    <p>畫面右下角還有一顆「📥 傳送整份逐字稿到字卡 App」按鈕，一鍵把整份逐字稿送進 App（送過去不會自動建卡，只是先讀進去，你再點生字才會真的建卡，不會誤塞一堆卡片）。</p>
+    <p>畫面右下角還有一顆「📥 收逐字稿」按鈕（滑鼠移上去會展開成「傳送逐字稿到英英美代誌」），一鍵把整份逐字稿送進 App。這顆按鈕只有在影片真的有逐字稿時才會出現，而且不必先手動點開逐字稿面板（送過去不會自動建卡，只是先讀進去，你再點生字才會真的建卡，不會誤塞一堆卡片）。</p>
   </div>
 </section>
 
-<section class="block" id="backup">
-  <p class="block-eyebrow">04 — 別忘記</p>
-  <h2>資料備份提醒</h2>
-  <p class="intro">字卡資料存在瀏覽器的 LocalStorage 裡，換手機、清瀏覽器資料都可能遺失，養成定期備份的習慣。</p>
+<section class="block" id="manage">
+  <p class="block-eyebrow">04 — 字卡管理</p>
+  <h2>查看、編輯、刪除已收藏的字卡</h2>
+  <p class="intro">句子收藏進來之後，隨時可以回頭調整內容或整理，不用重新收藏一次。</p>
   <ol class="steps">
     <li>
       <span class="step-badge">1</span>
       <div class="step-body">
-        <h3>開啟複習到期提醒</h3>
-        <p>首次使用建議先到「首頁」點「開啟到期提醒通知」授權，之後才會收到複習提醒推播。</p>
+        <h3>打開字卡管理</h3>
+        <p>首頁往下滑，點「字卡管理」。可以用文字搜尋，或依熟練度篩選，也能勾選多張批次刪除、或整批清空某個等級的字卡。</p>
       </div>
     </li>
     <li>
       <span class="step-badge">2</span>
+      <div class="step-body">
+        <h3>點進單張編輯內容</h3>
+        <p>在列表點任一張卡片，進入「字卡內容」頁，可以修改中文翻譯、英文釋義、語境句與語境句中文翻譯，改完按「儲存變更」。</p>
+      </div>
+    </li>
+    <li>
+      <span class="step-badge">3</span>
+      <div class="step-body">
+        <h3>聽真人發音</h3>
+        <p>卡片內「聽真人說（YouGlish）」按鈕，點下去即時開啟真人例句影片牆，不會存進手機，畫面上會標示 Powered by YouGlish。</p>
+      </div>
+    </li>
+    <li>
+      <span class="step-badge">4</span>
+      <div class="step-body">
+        <h3>查看複習狀態、重設進度</h3>
+        <p>同一頁下方看得到複習次數、目前間隔、下次複習日期。如果學錯方向、或想從頭再練一次，按「重設複習進度」。</p>
+      </div>
+    </li>
+    <li>
+      <span class="step-badge">5</span>
+      <div class="step-body">
+        <h3>刪除單張字卡</h3>
+        <p>頁面最下方「刪除這張字卡」可以刪掉這一張，此動作無法復原。</p>
+      </div>
+    </li>
+  </ol>
+</section>
+
+<section class="block" id="reminders">
+  <p class="block-eyebrow">05 — 提醒</p>
+  <h2>設定複習到期提醒</h2>
+  <p class="intro">「資料」分頁最下面有兩種提醒方式，看你的手機或使用習慣選一種就好，兩個都開也可以。</p>
+
+  <div class="callout" style="margin-bottom:20px;">
+    <p class="callout-title">🔔 瀏覽器推播（主要，建議先開這個）</p>
+    <p>App 關著也收得到。iPhone 需要先把 App 加到主畫面（見上方「01 裝進手機主畫面」）才能用；電腦和 Android 直接打開網頁就能開通，不用另外安裝什麼。到「資料」分頁點「開啟到期提醒」授權即可，只有真的有字卡到期時才會收到通知。</p>
+  </div>
+
+  <div class="callout" style="margin-bottom:4px;">
+    <p class="callout-title">💬 LINE 提醒（備用，適合不想開瀏覽器通知、或 iPhone 沒把 App 加到主畫面的人）</p>
+    <p>綁定後，只有真的有字卡到期那天才會收到 LINE 訊息，沒到期不會打擾你，三步驟就能綁定：</p>
+  </div>
+  <ol class="steps">
+    <li>
+      <span class="step-badge">1</span>
+      <div class="step-body">
+        <h3>加官方帳號好友</h3>
+        <p>「資料」分頁點「① 加「英英美代誌」好友」，加入 LINE 官方帳號「英英美代誌」。</p>
+      </div>
+    </li>
+    <li>
+      <span class="step-badge">2</span>
+      <div class="step-body">
+        <h3>送出綁定碼</h3>
+        <p>點「② 開啟 LINE 送出綁定碼」，會直接開啟聊天室並把「綁定 XXXXXX」訊息填好，按送出就好，不用自己打字。</p>
+      </div>
+    </li>
+    <li>
+      <span class="step-badge">3</span>
+      <div class="step-body">
+        <h3>確認綁定成功</h3>
+        <p>回到 App 點「③ 我送出了，檢查綁定結果」，看到狀態變成「已綁定」就完成了。</p>
+      </div>
+    </li>
+  </ol>
+</section>
+
+<section class="block" id="backup">
+  <p class="block-eyebrow">06 — 別忘記</p>
+  <h2>資料備份</h2>
+  <p class="intro">字卡資料存在瀏覽器的 LocalStorage 裡，換手機、清瀏覽器資料都可能遺失，養成定期備份的習慣。</p>
+  <ol class="steps">
+    <li>
+      <span class="step-badge">1</span>
       <div class="step-body">
         <h3>定期匯出 JSON 備份</h3>
         <p>App 內「資料」分頁有匯出功能，定期匯出存起來（例如存進雲端筆記或信箱），避免清除瀏覽器資料時遺失字卡。</p>

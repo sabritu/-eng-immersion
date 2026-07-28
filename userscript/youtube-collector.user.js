@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         英文習得 - 網頁選字收藏 + YouTube 逐字稿收藏
 // @namespace    sweetenbud.eng-immersion
-// @version      1.3
+// @version      1.5
 // @description  任何網頁選取英文句子都能一鍵送進字卡 App；YouTube 影片頁面額外有逐句收藏與整份逐字稿傳送功能
 // @match        *://*/*
 // @grant        GM_setValue
@@ -14,18 +14,13 @@
   'use strict';
 
   // ---------------------------------------------------------
-  // 設定：PWA 網址（第一次使用時會跳出詢問，之後存起來不用再填）
+  // 設定：PWA 網址（固定寫死，全部人共用同一個部署，不用再貼）
+  // 萬一之後真的要換網址，用 Tampermonkey 選單「設定 PWA 網址」覆蓋即可
   // ---------------------------------------------------------
+  const DEFAULT_PWA_URL = 'https://sabritu.github.io/-eng-immersion/';
+
   function getPwaUrl() {
-    let url = GM_getValue('pwaUrl', '');
-    if (!url) {
-      url = window.prompt('請貼上你的英文習得 PWA 網址（例如 https://你的帳號.github.io/eng-immersion/）：', '');
-      if (url) {
-        url = url.trim().replace(/\/+$/, '') + '/';
-        GM_setValue('pwaUrl', url);
-      }
-    }
-    return url;
+    return GM_getValue('pwaUrl', '') || DEFAULT_PWA_URL;
   }
 
   GM_registerMenuCommand('設定 PWA 網址', () => {
@@ -107,7 +102,7 @@
   // ---------------------------------------------------------
   if (!location.hostname.includes('youtube.com')) return;
 
-  // 傳送整份逐字稿：用 postMessage 傳給新開的 PWA 分頁
+  // 傳送逐字稿：用 postMessage 傳給新開的 PWA 分頁
   // （不走網址參數，因為完整逐字稿常常長到超過瀏覽器網址長度上限）
   function sendBulkTranscript(text) {
     const pwaUrl = getPwaUrl();
@@ -146,7 +141,7 @@
     }, 300);
   }
 
-  // 抓取目前頁面上的完整逐字稿文字（新舊兩種版面都支援）
+  // 抓取目前畫面上已展開的逐字稿面板文字（新舊兩種版面都支援）
   function collectAllTranscriptText() {
     const oldSegs = Array.from(document.querySelectorAll('ytd-transcript-segment-renderer'))
       .map((seg) => seg.querySelector('.segment-text'))
@@ -160,27 +155,172 @@
     return all.join(' ');
   }
 
-  // 浮動按鈕：一鍵把目前影片的完整逐字稿傳到 PWA
+  // =========================================================
+  // 判斷這支影片到底有沒有逐字稿（不必打開面板）
+  //
+  // YouTube 會先把逐字稿面板的「容器」放進網頁裡再隱藏起來，等使用者點才填內容；
+  // 沒有逐字稿的影片則根本不會有這個容器。所以查容器在不在，就等於查有沒有逐字稿。
+  // =========================================================
+  function currentVideoId() {
+    return new URLSearchParams(location.search).get('v') || '';
+  }
+
+  function isWatchPage() {
+    return location.pathname === '/watch' && !!currentVideoId();
+  }
+
+  function findTranscriptPanel() {
+    return document.querySelector(
+      'ytd-engagement-panel-section-list-renderer[target-id="engagement-panel-searchable-transcript"]'
+    );
+  }
+
+  function hasTranscript() {
+    if (!isWatchPage()) return false;
+    return !!(
+      findTranscriptPanel() ||
+      document.querySelector('ytd-video-description-transcript-section-renderer')
+    );
+  }
+
+  // =========================================================
+  // 取得逐字稿：使用者不必自己動手點開面板
+  //   面板已經開著 → 直接讀，零等待
+  //   面板沒開     → 腳本自己點開、抓完再關掉，全程約 0.5 秒
+  //
+  // 為什麼一定要走「開面板」這條路（兩條看似更聰明的捷徑都已實測失敗）：
+  //   1. 伺服器端代抓字幕（worker/transcript-worker.js 走的路）已被 YouTube 封鎖，
+  //      實測回 HTTP 200 但內容 0 bytes，帶 cookie 也一樣。
+  //   2. 頁面內直接呼叫 /youtubei/v1/get_transcript 一律回 Precondition check failed，
+  //      連用 ytInitialData 裡 YouTube 自己準備好的 params 也不通。
+  //   結論：只有讓 YouTube 自己的程式去要資料才拿得到，所以就是點它的按鈕。
+  // =========================================================
+  function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  // 描述區沒展開時，「顯示轉錄稿」按鈕還沒被畫出來，要先把描述打開
+  function findTranscriptOpenButton() {
+    const section = document.querySelector('ytd-video-description-transcript-section-renderer');
+    return section ? section.querySelector('button') : null;
+  }
+
+  function expandDescription() {
+    const expander = document.querySelector('#description-inline-expander #expand') ||
+                     document.querySelector('tp-yt-paper-button#expand') ||
+                     document.querySelector('#expand');
+    if (expander) expander.click();
+  }
+
+  function closeTranscriptPanel(panel) {
+    const closeBtn = panel.querySelector('#visibility-button button') ||
+                     panel.querySelector('#header button[aria-label]');
+    if (closeBtn) closeBtn.click();
+  }
+
+  async function fetchTranscriptByOpeningPanel() {
+    const panel = findTranscriptPanel();
+    if (!panel) return '';
+
+    if (panel.getAttribute('visibility') === 'ENGAGEMENT_PANEL_VISIBILITY_EXPANDED') {
+      return collectAllTranscriptText();
+    }
+
+    let openBtn = findTranscriptOpenButton();
+    if (!openBtn) {
+      expandDescription();
+      await sleep(600);
+      openBtn = findTranscriptOpenButton();
+    }
+    if (!openBtn) return '';
+
+    // 抓取期間先讓面板透明，使用者不會看到畫面整個彈出來又收回去
+    const prevOpacity = panel.style.opacity;
+    panel.style.opacity = '0';
+    openBtn.click();
+
+    let text = '';
+    for (let i = 0; i < 40; i++) {   // 最多等 8 秒讓內容載完
+      await sleep(200);
+      text = collectAllTranscriptText();
+      if (text) break;
+    }
+
+    closeTranscriptPanel(panel);
+    panel.style.opacity = prevOpacity;
+    return text;
+  }
+
+  async function getTranscriptText() {
+    const onScreen = collectAllTranscriptText();
+    if (onScreen) return onScreen;
+
+    try {
+      return await fetchTranscriptByOpeningPanel();
+    } catch (e) {
+      return '';
+    }
+  }
+
+  // ---------------------------------------------------------
+  // 浮動按鈕：一鍵把目前影片的逐字稿傳到 PWA
+  // 平常只顯示短標題以免擋畫面，滑鼠移上去才展開完整名稱
+  // ---------------------------------------------------------
+  const BTN_LABEL_SHORT = '📥 收逐字稿';
+  const BTN_LABEL_FULL = '📥 傳送逐字稿到英英美代誌';
+
   function ensureBulkSendButton() {
-    if (document.getElementById('eng-bulk-send-btn')) return;
-    const btn = document.createElement('button');
+    let btn = document.getElementById('eng-bulk-send-btn');
+    if (btn) return btn;
+
+    btn = document.createElement('button');
     btn.id = 'eng-bulk-send-btn';
-    btn.textContent = '📥 傳送整份逐字稿到字卡 App';
+    btn.textContent = BTN_LABEL_SHORT;
+    btn.title = BTN_LABEL_FULL;
     btn.style.cssText = [
       'position:fixed', 'bottom:20px', 'right:20px', 'z-index:99999',
       'background:#d9a253', 'color:#14120f', 'font-weight:700',
-      'padding:10px 16px', 'border-radius:9999px', 'border:none',
-      'box-shadow:0 2px 10px rgba(0,0,0,.35)', 'cursor:pointer', 'font-size:13px'
+      'padding:9px 14px', 'border-radius:9999px', 'border:none',
+      'box-shadow:0 2px 10px rgba(0,0,0,.35)', 'cursor:pointer', 'font-size:13px',
+      'white-space:nowrap'
     ].join(';');
-    btn.addEventListener('click', () => {
-      const text = collectAllTranscriptText();
-      if (!text) {
-        alert('沒有找到逐字稿內容，請先點影片下方「顯示轉錄稿」打開字幕面板，再點一次這個按鈕。');
-        return;
-      }
-      sendBulkTranscript(text);
+
+    btn.addEventListener('mouseenter', () => {
+      if (!btn.disabled) btn.textContent = BTN_LABEL_FULL;
     });
+    btn.addEventListener('mouseleave', () => {
+      if (!btn.disabled) btn.textContent = BTN_LABEL_SHORT;
+    });
+
+    btn.addEventListener('click', async () => {
+      if (btn.disabled) return;
+      btn.disabled = true;
+      btn.textContent = '⏳ 抓取中…';
+      try {
+        const text = await getTranscriptText();
+        if (!text) {
+          alert('抓不到這支影片的逐字稿。請點影片下方「⋯更多」→「顯示轉錄稿」打開面板後，再點一次這顆按鈕。');
+          return;
+        }
+        sendBulkTranscript(text);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = BTN_LABEL_SHORT;
+      }
+    });
+
     document.body.appendChild(btn);
+    return btn;
+  }
+
+  // 只有「這支影片真的有逐字稿」時才讓按鈕出現，其餘時候一律藏起來
+  function updateBulkSendButton() {
+    const existing = document.getElementById('eng-bulk-send-btn');
+    if (hasTranscript()) {
+      ensureBulkSendButton().style.display = '';
+    } else if (existing) {
+      existing.style.display = 'none';
+    }
   }
 
   // ---------------------------------------------------------
@@ -228,14 +368,20 @@
   function injectButtons() {
     injectForVariant('ytd-transcript-segment-renderer', '.segment-text', '.segment');
     injectForVariant('transcript-segment-view-model', 'span.ytAttributedStringHost', null);
-    ensureBulkSendButton();
+    updateBulkSendButton();
   }
 
   // ---------------------------------------------------------
-  // YouTube 是 SPA，切換影片不會整頁重新載入；用 MutationObserver 持續偵測轉錄稿面板
+  // YouTube 是 SPA，切換影片不會整頁重新載入；用 MutationObserver 持續偵測轉錄稿面板。
+  // YouTube 頁面變動非常頻繁，加 300ms 緩衝避免每次微小變動都重掃一遍。
   // ---------------------------------------------------------
+  let pendingScan = null;
   const observer = new MutationObserver(() => {
-    injectButtons();
+    if (pendingScan) return;
+    pendingScan = setTimeout(() => {
+      pendingScan = null;
+      injectButtons();
+    }, 300);
   });
   observer.observe(document.body, { childList: true, subtree: true });
 
