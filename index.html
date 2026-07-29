@@ -1233,10 +1233,23 @@ function extractAccents(entry) {
   return accents;
 }
 
-function extractEnDefinition(entry) {
-  const meaning = entry.meanings && entry.meanings[0];
-  const def = meaning && meaning.definitions && meaning.definitions[0];
-  return def ? def.definition : '';
+// 同形異義字（如 set）被拆成多筆 entry，只看 entries[0] 常常挑到冷僻詞性
+// （"set" 的 entries[0] 是動詞第 1 條「to put something down, to rest」，
+// 但更常見的是名詞「一組」或形容詞「固定的」）。這裡掃過全部 entry 的全部
+// 義項，優先選「有例句」的第一條——例句代表這是字典編者認為值得示範用法的
+// 常用義項，沒有就退回原本行為（第一筆的第一條）。
+function extractBestEnDefinition(entries) {
+  let firstAny = '';
+  for (const entry of entries) {
+    for (const meaning of entry.meanings || []) {
+      for (const def of meaning.definitions || []) {
+        if (!def.definition) continue;
+        if (!firstAny) firstAny = def.definition;
+        if (def.example) return def.definition;
+      }
+    }
+  }
+  return firstAny;
 }
 
 // 主查詢流程：本地 ECDICT（離線、即時）-> Google 翻譯（取得中文）-> dictionaryapi.dev（選配，補英英釋義/音標）
@@ -1254,16 +1267,16 @@ async function lookupWord(word) {
 
   const [zh, enResult] = await Promise.all([
     fetchGoogleTranslate(word),
-    lookupEnDictionary(word)
+    lookupEnDictionaryAll(word)
   ]);
 
   if (zh || enResult) {
     return {
       source: zh ? 'google' : 'dictionaryapi',
-      phonetic: enResult ? extractPhonetic(enResult.entry) : '',
-      accents: enResult ? extractAccents(enResult.entry) : null,
+      phonetic: enResult ? extractPhonetic(enResult.entries[0]) : '',
+      accents: enResult ? extractAccents(enResult.entries[0]) : null,
       zhDefinition: zh || '',
-      enDefinition: enResult ? extractEnDefinition(enResult.entry) : '',
+      enDefinition: enResult ? extractBestEnDefinition(enResult.entries) : '',
       tags: ''
     };
   }
@@ -2711,8 +2724,8 @@ function renderDetailPage() {
 
 // ---- 其他用法（多義項）----
 // dictionaryapi.dev 每次回傳其實含多組詞性、每組多個義項與例句、同義詞，
-// 但 extractEnDefinition 只取第一組的第一條，其餘全丟。這裡把整份展開，
-// 但一律收在收合區塊、展開才查、查完只留在記憶體，不寫進字卡也不進同步。
+// 建卡時只取一條放進 enDefinition。這裡把整份展開，一律收在收合區塊、
+// 展開才查、查完只留在記憶體，不寫進字卡也不進同步。
 const POS_ZH = {
   noun: '名詞', verb: '動詞', adjective: '形容詞', adverb: '副詞',
   pronoun: '代名詞', preposition: '介系詞', conjunction: '連接詞',
