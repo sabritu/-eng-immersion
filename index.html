@@ -533,6 +533,25 @@
       <p id="youglishLoading" class="specimen-tag text-ink/60">讀取中…</p>
       <div id="youglishContainer" class="hidden w-full"></div>
     </div>
+
+    <!-- 播放控制：YouGlish 一次一句快速輪播，想重聽只能拉進度條很難對準。
+         重播固定回到這句開頭，放慢語速則是給「聽得到但抓不到在講什麼」用的。 -->
+    <div id="youglishControls" class="hidden space-y-2">
+      <div class="flex items-center gap-2">
+        <button id="ygPrevBtn" class="btn-quiet flex-1 py-2 rounded-lg text-xs" title="上一句">← 上一句</button>
+        <button id="ygReplayBtn" class="btn-primary flex-[1.4] py-2 rounded-lg text-xs font-bold" title="重聽這一句">↻ 再聽一次</button>
+        <button id="ygNextBtn" class="btn-quiet flex-1 py-2 rounded-lg text-xs" title="下一句">下一句 →</button>
+      </div>
+      <div class="flex items-center gap-2">
+        <span class="specimen-tag shrink-0">語速</span>
+        <div class="flex gap-1.5 flex-1">
+          <button data-speed="0.5" class="yg-speed btn-quiet flex-1 py-1.5 rounded-lg text-xs">0.5×</button>
+          <button data-speed="0.75" class="yg-speed btn-quiet flex-1 py-1.5 rounded-lg text-xs">0.75×</button>
+          <button data-speed="1" class="yg-speed btn-quiet flex-1 py-1.5 rounded-lg text-xs">1×</button>
+        </div>
+      </div>
+    </div>
+
     <p class="specimen-tag text-center">Powered by YouGlish</p>
   </div>
 </div>
@@ -1518,6 +1537,8 @@ async function openYouglish(word) {
   loading.textContent = '讀取中…';
   loading.classList.remove('hidden');
   container.classList.add('hidden');
+  document.getElementById('youglishControls').classList.add('hidden');
+  setYouglishSpeed(1);
 
   try {
     await loadYouglishScript();
@@ -1529,6 +1550,7 @@ async function openYouglish(word) {
           onFetchDone: () => {
             loading.classList.add('hidden');
             container.classList.remove('hidden');
+            document.getElementById('youglishControls').classList.remove('hidden');
           }
         }
       });
@@ -1539,6 +1561,32 @@ async function openYouglish(word) {
   }
 }
 
+// 每次開新的字都回到正常語速，不要把上一個字調慢的設定帶過來
+let youglishSpeed = 1;
+function setYouglishSpeed(speed) {
+  youglishSpeed = speed;
+  if (youglishWidget) youglishWidget.setSpeed(speed);
+  document.querySelectorAll('.yg-speed').forEach((btn) => {
+    const active = Number(btn.dataset.speed) === speed;
+    btn.classList.toggle('btn-primary', active);
+    btn.classList.toggle('font-bold', active);
+    btn.classList.toggle('btn-quiet', !active);
+  });
+}
+
+document.getElementById('ygReplayBtn').addEventListener('click', () => {
+  if (youglishWidget) youglishWidget.replay();
+});
+document.getElementById('ygPrevBtn').addEventListener('click', () => {
+  if (youglishWidget) youglishWidget.previous();
+});
+document.getElementById('ygNextBtn').addEventListener('click', () => {
+  if (youglishWidget) youglishWidget.next();
+});
+document.querySelectorAll('.yg-speed').forEach((btn) => {
+  btn.addEventListener('click', () => setYouglishSpeed(Number(btn.dataset.speed)));
+});
+
 document.getElementById('revealYouglishBtn').addEventListener('click', () => {
   if (currentReviewCard && currentReviewCard.word) openYouglish(currentReviewCard.word);
 });
@@ -1546,6 +1594,7 @@ document.getElementById('revealYouglishBtn').addEventListener('click', () => {
 document.getElementById('closeYouglishBtn').addEventListener('click', () => {
   document.getElementById('youglishModal').classList.add('hidden');
   document.getElementById('youglishContainer').innerHTML = '';
+  document.getElementById('youglishControls').classList.add('hidden');
   youglishWidget = null;
 });
 
