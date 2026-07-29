@@ -453,6 +453,16 @@
       <button id="detailSaveBtn" class="btn-primary w-full py-2.5 rounded-lg text-sm">儲存變更</button>
     </div>
 
+    <!-- 其他語境句：同一個字在別的文章又遇到時累積下來的真實例句。
+         沒有累積過的字整張卡片隱藏，不佔版面。 -->
+    <div id="detailExtrasCard" class="specimen-card p-4 space-y-3 hidden">
+      <div class="flex items-baseline justify-between gap-2">
+        <p class="specimen-tag">其他語境句</p>
+        <p class="text-xs text-muted">你自己遇過的 <span id="detailExtrasCount" class="text-paper">0</span> 句</p>
+      </div>
+      <div id="detailExtrasList" class="space-y-3"></div>
+    </div>
+
     <!-- 其他用法：展開才即時查 dictionaryapi.dev，不寫進字卡也不進同步，
          避免每張卡都背著十幾條義項讓 LocalStorage 與跨裝置同步量膨脹。 -->
     <div class="specimen-card p-4">
@@ -590,12 +600,30 @@ function migrateCard(card) {
   if (card.tags === undefined) card.tags = '';
   if (card.sentenceZh === undefined) card.sentenceZh = '';
   if (card.batchId === undefined) card.batchId = 'legacy';
+  // 同一個字在別的文章又遇到時，舊的語境句移進這裡保存，不再被新句子直接蓋掉。
+  // 刻意另開欄位而不是把 sentence 改成陣列：sentence 是字串這件事被備份還原的
+  // 驗證（validateImportedCards）和其他七處讀取點依賴著，改型別會讓舊備份匯不回來。
+  if (!Array.isArray(card.extraSentences)) card.extraSentences = [];
   // 舊版 source 只是技術標記（pending/manual），不是給人看的來源描述，統一歸入歷史資料
   if (!card.source || card.source === 'pending' || card.source === 'manual') card.source = '歷史資料';
   // 跨裝置同步靠這個時間戳決定同一張卡要留哪一版。舊卡沒有這個欄位，
   // 用既有的複習時間或建立時間補上，不會憑空變成「剛剛改過」而蓋掉另一台的資料。
   if (card.updatedAt === undefined) card.updatedAt = card.lastReviewed || card.createdAt || '1970-01-01T00:00:00.000Z';
   return card;
+}
+
+// 把一句語境句收進字卡的「其他語境句」。以句子原文去重，避免同一句被收進兩次；
+// 上限 8 句，超過就丟掉最舊的——這個欄位會參與跨裝置同步，不設限會隨使用一直長大。
+const MAX_EXTRA_SENTENCES = 8;
+function addExtraSentence(card, text, zh) {
+  const trimmed = (text || '').trim();
+  if (!trimmed) return;
+  if (!Array.isArray(card.extraSentences)) card.extraSentences = [];
+  if (card.extraSentences.some((s) => s.text === trimmed)) return;
+  card.extraSentences.push({ text: trimmed, zh: (zh || '').trim() });
+  if (card.extraSentences.length > MAX_EXTRA_SENTENCES) {
+    card.extraSentences = card.extraSentences.slice(-MAX_EXTRA_SENTENCES);
+  }
 }
 
 // 每次改動字卡都要呼叫，同步時才知道哪一版比較新
@@ -705,8 +733,23 @@ function pruneDeletions(deletions) {
    兩邊都不保留。這個函式不碰 localStorage，純粹算出結果，方便測試。 */
 function mergeCardSets(localCards, remoteCards, mergedDeletions) {
   const byId = new Map();
+  // extraSentences 要取聯集，不能跟著整張卡二選一。這個欄位是「累積」性質的：
+  // 手機在句子 A 遇到某字、電腦在句子 B 遇到同一個字，只留 updatedAt 較新的那張，
+  // 另一台累積的句子就沒了——正是這個專案先前踩過的同步資料遺失。
+  // 代價是某台裝置刪掉的例句可能被另一台的舊資料帶回來，但「偶爾多一句」
+  // 遠比「靜默少一句」可接受，所以不為單句再做一套 tombstone。
+  const extrasById = new Map();
+  const collectExtras = (card) => {
+    if (!card || !card.id || !Array.isArray(card.extraSentences)) return;
+    if (!extrasById.has(card.id)) extrasById.set(card.id, new Map());
+    const bucket = extrasById.get(card.id);
+    card.extraSentences.forEach((s) => {
+      if (s && s.text && !bucket.has(s.text)) bucket.set(s.text, s);
+    });
+  };
   const takeNewer = (card) => {
     if (!card || !card.id) return;
+    collectExtras(card);
     const existing = byId.get(card.id);
     if (!existing || (card.updatedAt || '') > (existing.updatedAt || '')) {
       byId.set(card.id, card);
@@ -714,6 +757,13 @@ function mergeCardSets(localCards, remoteCards, mergedDeletions) {
   };
   localCards.forEach(takeNewer);
   remoteCards.forEach(takeNewer);
+
+  byId.forEach((card, id) => {
+    const bucket = extrasById.get(id);
+    if (!bucket || !bucket.size) return;
+    // 勝出的那張卡把兩邊的例句都帶上，同樣受上限保護
+    card.extraSentences = Array.from(bucket.values()).slice(-MAX_EXTRA_SENTENCES);
+  });
 
   const result = [];
   byId.forEach((card, id) => {
@@ -1516,6 +1566,12 @@ document.getElementById('modalSaveBtn').addEventListener('click', () => {
     c.zhDefinition = zhDefinition;
     c.enDefinition = enDefinition;
     c.tags = tags;
+    // 這個字之前收集過，而且這次是在不同的句子裡遇到：舊句子移進 extraSentences
+    // 保存，不要無聲丟掉。新句子仍然當主語境句（維持原本行為，複習用的克漏字
+    // 就是拿它挖空的），使用者等於累積了這個字的多個真實使用情境。
+    if (sentence && c.sentence && sentence !== c.sentence) {
+      addExtraSentence(c, c.sentence, c.sentenceZh);
+    }
     c.sentence = sentence || c.sentence;
     c.sentenceZh = sentenceZh;
     c.status = 'active';
@@ -2724,6 +2780,67 @@ function renderDetailAccents(card) {
   });
 }
 
+// 其他語境句：可朗讀、可個別刪除。刪除是低頻低風險操作，用低調的文字按鈕
+// 而不是滿版警示色，跟這個 App 其他地方的視覺分量一致。
+function renderDetailExtras(card) {
+  const wrap = document.getElementById('detailExtrasCard');
+  const list = document.getElementById('detailExtrasList');
+  const extras = Array.isArray(card.extraSentences) ? card.extraSentences : [];
+
+  list.innerHTML = '';
+  if (!extras.length) {
+    wrap.classList.add('hidden');
+    return;
+  }
+  wrap.classList.remove('hidden');
+  document.getElementById('detailExtrasCount').textContent = extras.length;
+
+  extras.forEach((s, idx) => {
+    const item = document.createElement('div');
+    item.className = 'border-t border-hair pt-3 space-y-1 first:border-t-0 first:pt-0';
+
+    const row = document.createElement('div');
+    row.className = 'flex items-start justify-between gap-2';
+    const en = document.createElement('p');
+    en.className = 'text-sm text-paper font-serif leading-relaxed min-w-0';
+    en.textContent = s.text;
+    row.appendChild(en);
+
+    const tools = document.createElement('div');
+    tools.className = 'flex items-center gap-2 shrink-0';
+    const speak = document.createElement('button');
+    speak.className = 'text-muted hover:text-amber';
+    speak.title = '朗讀這句';
+    speak.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4V5Z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/></svg>';
+    speak.addEventListener('click', () => speakSentence(s.text));
+    const del = document.createElement('button');
+    del.className = 'text-xs text-muted hover:text-paper';
+    del.textContent = '刪除';
+    del.addEventListener('click', () => {
+      const target = CARDS.find((c) => c.id === detailCardId);
+      if (!target) return;
+      target.extraSentences.splice(idx, 1);
+      touchCard(target);
+      persist();
+      renderDetailExtras(target);
+      toast('已刪除這句');
+    });
+    tools.appendChild(speak);
+    tools.appendChild(del);
+    row.appendChild(tools);
+    item.appendChild(row);
+
+    if (s.zh) {
+      const zh = document.createElement('p');
+      zh.className = 'text-xs text-muted leading-relaxed';
+      zh.textContent = s.zh;
+      item.appendChild(zh);
+    }
+
+    list.appendChild(item);
+  });
+}
+
 function renderDetailPage() {
   const card = CARDS.find((c) => c.id === detailCardId);
   if (!card) {
@@ -2746,6 +2863,7 @@ function renderDetailPage() {
   document.getElementById('detailSource').textContent = stripSourceTime(card.source);
 
   renderDetailAccents(card);
+  renderDetailExtras(card);
   resetSensesBlock(); // 換一張卡就收回去，不要把上一張的義項留在畫面上
 
   // 舊卡沒有腔調資料，在這裡補查一次並存回卡片，讓它自己慢慢補齊
