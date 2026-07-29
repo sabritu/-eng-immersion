@@ -1154,6 +1154,28 @@ async function fetchGoogleTranslate(word) {
   }
 }
 
+// 批次翻譯多句英文例句：把所有句子用換行合併成一次請求（而不是逐句各打一次），
+// Google 這支端點會把換行原樣保留在回傳的翻譯文字裡，所以拆回來就能一一對應。
+// 拆出來的行數如果對不上，代表對齊失敗，寧可整批不翻也不要翻譯錯位貼到錯的句子上。
+async function translateBatch(lines) {
+  if (!lines.length) return null;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 6000);
+  try {
+    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=zh-TW&dt=t&q=${encodeURIComponent(lines.join('\n'))}`;
+    const res = await fetch(url, { signal: controller.signal });
+    clearTimeout(timer);
+    if (!res.ok) return null;
+    const data = await res.json();
+    const joined = (data[0] || []).map((seg) => seg[0]).join('');
+    const parts = joined.split('\n');
+    return parts.length === lines.length ? parts : null;
+  } catch (e) {
+    clearTimeout(timer);
+    return null;
+  }
+}
+
 // dictionaryapi.dev 降級為選配：只用來補英英釋義與音標，帶 5 秒 timeout
 async function fetchDictionary(word) {
   const controller = new AbortController();
@@ -1198,6 +1220,24 @@ async function fetchDictionaryAll(word) {
   } catch (e) {
     clearTimeout(timer);
     return null;
+  }
+}
+
+// 真人翻譯的中英對照例句，透過 Worker 代打 Tatoeba（瀏覽器直接打會被 CORS 擋）。
+// Worker 那邊已經過濾掉跟查詢詞不相關的句子，這裡只需處理查無資料的情形。
+async function fetchTatoebaSentences(phrase) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 6000);
+  try {
+    const url = `${LINE_WORKER_URL}/tatoeba?q=${encodeURIComponent(phrase)}`;
+    const res = await fetch(url, { signal: controller.signal });
+    clearTimeout(timer);
+    if (!res.ok) return [];
+    const data = await res.json();
+    return Array.isArray(data.sentences) ? data.sentences : [];
+  } catch (e) {
+    clearTimeout(timer);
+    return [];
   }
 }
 
@@ -2786,7 +2826,7 @@ function renderSenseGroups(data) {
   body.innerHTML = '';
 
   if (!data) {
-    body.appendChild(sensesMessage('英文字典查不到這個詞。片語通常不會收錄在單字字典裡，屬正常情形。'));
+    body.appendChild(sensesMessage('字典跟語料庫都查不到這個詞／片語，可能是拼寫太特殊或用法太冷僻。'));
     return;
   }
 
@@ -2795,6 +2835,10 @@ function renderSenseGroups(data) {
     const note = sensesMessage(`以原形「${data.matchedWord}」查詢`);
     note.className = 'text-xs text-muted';
     body.appendChild(note);
+  }
+
+  if (!data.groups.length && data.tatoeba.length) {
+    body.appendChild(sensesMessage('英文字典查不到這個詞的釋義（片語常見於此），但語料庫找到真人例句：'));
   }
 
   data.groups.forEach((group, gi) => {
@@ -2837,6 +2881,12 @@ function renderSenseGroups(data) {
         ex.className = 'text-xs text-muted font-serif italic leading-relaxed';
         ex.textContent = '「' + def.example + '」';
         col.appendChild(ex);
+        if (def.exampleZh) {
+          const exZh = document.createElement('p');
+          exZh.className = 'text-xs text-muted leading-relaxed';
+          exZh.textContent = def.exampleZh;
+          col.appendChild(exZh);
+        }
       }
       if (def.synonyms && def.synonyms.length) {
         const syn = document.createElement('p');
@@ -2859,10 +2909,43 @@ function renderSenseGroups(data) {
     body.appendChild(wrap);
   });
 
-  const credit = document.createElement('p');
-  credit.className = 'text-xs text-muted pt-1';
-  credit.textContent = '資料來源：dictionaryapi.dev';
-  body.appendChild(credit);
+  if (data.tatoeba.length) {
+    const wrap = document.createElement('div');
+    wrap.className = data.groups.length ? 'border-t border-hair pt-4 space-y-2.5' : 'space-y-2.5';
+
+    const label = document.createElement('p');
+    label.className = 'text-xs font-bold text-amber';
+    label.textContent = '真人例句（中英對照）';
+    wrap.appendChild(label);
+
+    data.tatoeba.forEach((s) => {
+      const item = document.createElement('div');
+      item.className = 'space-y-0.5';
+      const en = document.createElement('p');
+      en.className = 'text-sm text-paper font-serif leading-relaxed';
+      en.textContent = s.en;
+      const zh = document.createElement('p');
+      zh.className = 'text-xs text-muted leading-relaxed';
+      zh.textContent = s.zh;
+      item.appendChild(en);
+      item.appendChild(zh);
+      wrap.appendChild(item);
+    });
+
+    const credit = document.createElement('p');
+    credit.className = 'text-xs text-muted';
+    credit.textContent = '例句來源：Tatoeba（CC 授權開放語料庫）';
+    wrap.appendChild(credit);
+
+    body.appendChild(wrap);
+  }
+
+  if (data.groups.length) {
+    const credit = document.createElement('p');
+    credit.className = 'text-xs text-muted pt-1';
+    credit.textContent = '釋義來源：dictionaryapi.dev';
+    body.appendChild(credit);
+  }
 }
 
 function resetSensesBlock() {
@@ -2892,9 +2975,22 @@ async function loadSenses(word) {
   body.innerHTML = '';
   body.appendChild(sensesMessage('查詢中…'));
 
-  const found = await lookupEnDictionaryAll(word);
-  const data = found ? { groups: extractSenseGroups(found.entries), matchedWord: found.matchedWord } : null;
-  const usable = data && data.groups.length ? data : null;
+  const [found, tatoeba] = await Promise.all([
+    lookupEnDictionaryAll(word),
+    fetchTatoebaSentences(word)
+  ]);
+  const groups = found ? extractSenseGroups(found.entries) : [];
+
+  // 例句集中換行合併成一次翻譯請求，而不是每條各打一次
+  const exampleDefs = groups.flatMap((g) => g.definitions).filter((d) => d.example);
+  if (exampleDefs.length) {
+    const translated = await translateBatch(exampleDefs.map((d) => d.example));
+    if (translated) exampleDefs.forEach((d, i) => { d.exampleZh = translated[i]; });
+  }
+
+  const usable = (groups.length || tatoeba.length)
+    ? { groups, matchedWord: found ? found.matchedWord : word, tatoeba }
+    : null;
   sensesCache.set(word, usable);
   sensesLoading = false;
 
@@ -2902,7 +2998,14 @@ async function loadSenses(word) {
   const current = CARDS.find((c) => c.id === detailCardId);
   if (!current || current.word !== word) return;
 
-  hint.textContent = usable ? `${usable.groups.length} 種詞性` : '查無資料';
+  if (usable) {
+    const parts = [];
+    if (usable.groups.length) parts.push(`${usable.groups.length} 種詞性`);
+    if (usable.tatoeba.length) parts.push(`${usable.tatoeba.length} 句真人例句`);
+    hint.textContent = parts.join('・');
+  } else {
+    hint.textContent = '查無資料';
+  }
   renderSenseGroups(usable);
 }
 
