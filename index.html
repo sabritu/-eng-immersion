@@ -453,6 +453,19 @@
       <button id="detailSaveBtn" class="btn-primary w-full py-2.5 rounded-lg text-sm">儲存變更</button>
     </div>
 
+    <!-- 其他用法：展開才即時查 dictionaryapi.dev，不寫進字卡也不進同步，
+         避免每張卡都背著十幾條義項讓 LocalStorage 與跨裝置同步量膨脹。 -->
+    <div class="specimen-card p-4">
+      <button id="detailSensesToggle" class="w-full flex items-center justify-between gap-3 text-left" aria-expanded="false" aria-controls="detailSensesBody">
+        <span class="specimen-tag">其他用法</span>
+        <span class="flex items-center gap-2 shrink-0">
+          <span id="detailSensesHint" class="text-xs text-muted">點開查詢</span>
+          <svg id="detailSensesChevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="text-muted transition-transform duration-200"><path d="m6 9 6 6 6-6"/></svg>
+        </span>
+      </button>
+      <div id="detailSensesBody" class="hidden mt-4 space-y-4"></div>
+    </div>
+
     <div class="specimen-card p-4 space-y-2">
       <p class="specimen-tag">複習狀態</p>
       <div class="flex items-baseline gap-2">
@@ -1165,6 +1178,35 @@ async function lookupEnDictionary(word) {
   for (const candidate of lemmatizeCandidates(word)) {
     entry = await fetchDictionary(candidate);
     if (entry) return { entry, matchedWord: candidate };
+  }
+  return null;
+}
+
+// 同音同形字（如 set 的動詞版、名詞版）在 dictionaryapi.dev 是拆成多筆 entry 回傳的，
+// fetchDictionary 只取 data[0] 會漏掉其餘。「其他用法」要看全貌，所以另開一支拿整個陣列。
+async function fetchDictionaryAll(word) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5000);
+  try {
+    const res = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(word)}`, {
+      signal: controller.signal
+    });
+    clearTimeout(timer);
+    if (!res.ok) return null;
+    const data = await res.json();
+    return Array.isArray(data) && data.length ? data : null;
+  } catch (e) {
+    clearTimeout(timer);
+    return null;
+  }
+}
+
+async function lookupEnDictionaryAll(word) {
+  let entries = await fetchDictionaryAll(word);
+  if (entries) return { entries, matchedWord: word };
+  for (const candidate of lemmatizeCandidates(word)) {
+    entries = await fetchDictionaryAll(candidate);
+    if (entries) return { entries, matchedWord: candidate };
   }
   return null;
 }
@@ -2651,6 +2693,7 @@ function renderDetailPage() {
   document.getElementById('detailSource').textContent = stripSourceTime(card.source);
 
   renderDetailAccents(card);
+  resetSensesBlock(); // 換一張卡就收回去，不要把上一張的義項留在畫面上
 
   // 舊卡沒有腔調資料，在這裡補查一次並存回卡片，讓它自己慢慢補齊
   if (!card.accents) {
@@ -2665,6 +2708,204 @@ function renderDetailPage() {
     });
   }
 }
+
+// ---- 其他用法（多義項）----
+// dictionaryapi.dev 每次回傳其實含多組詞性、每組多個義項與例句、同義詞，
+// 但 extractEnDefinition 只取第一組的第一條，其餘全丟。這裡把整份展開，
+// 但一律收在收合區塊、展開才查、查完只留在記憶體，不寫進字卡也不進同步。
+const POS_ZH = {
+  noun: '名詞', verb: '動詞', adjective: '形容詞', adverb: '副詞',
+  pronoun: '代名詞', preposition: '介系詞', conjunction: '連接詞',
+  interjection: '感嘆詞', exclamation: '感嘆詞', determiner: '限定詞',
+  numeral: '數詞', article: '冠詞', abbreviation: '縮寫'
+};
+const MAX_DEFS_PER_POS = 5; // set 的動詞就有 45 條，全攤開會變文字牆
+const MAX_SYNONYMS = 6;
+const sensesCache = new Map(); // word -> { groups, matchedWord } 或 null（查無）
+let sensesLoading = false;
+
+// 把多筆 entry 的 meanings 依詞性合併成一組（set 的名詞散在 entry1/entry3，要併成一個「名詞」），
+// 再依詞性去重義項。挑要顯示的幾條時優先留有例句的——使用者要的是「怎麼用」而不是定義本身，
+// 但顯示順序仍照字典原本的排序（前面的通常較常用）。
+// 同義詞只取義項層的：詞性層的同義詞是整個 entry 共用，合併後會把不同意思混在一起
+// （set 的「日落」跟「一組東西」都是名詞，混起來會列出 sunset、Belgian block 這種誤導組合）。
+function extractSenseGroups(entries) {
+  const byPos = new Map();
+  entries.forEach((entry) => {
+    (entry.meanings || []).forEach((m) => {
+      const pos = m.partOfSpeech || '';
+      if (!byPos.has(pos)) byPos.set(pos, []);
+      const bucket = byPos.get(pos);
+      (m.definitions || []).forEach((d) => {
+        if (!d.definition) return;
+        if (bucket.some((x) => x.text === d.definition)) return;
+        bucket.push({
+          text: d.definition,
+          example: d.example || '',
+          synonyms: (d.synonyms || []).slice(0, MAX_SYNONYMS)
+        });
+      });
+    });
+  });
+
+  return Array.from(byPos.entries()).map(([pos, defs]) => {
+    const indexed = defs.map((d, i) => ({ ...d, i }));
+    const withEx = indexed.filter((d) => d.example);
+    const withoutEx = indexed.filter((d) => !d.example);
+    const picked = withEx.slice(0, MAX_DEFS_PER_POS);
+    if (picked.length < MAX_DEFS_PER_POS) {
+      picked.push(...withoutEx.slice(0, MAX_DEFS_PER_POS - picked.length));
+    }
+    picked.sort((a, b) => a.i - b.i);
+    return { pos, posZh: POS_ZH[pos] || '', total: defs.length, definitions: picked };
+  }).filter((g) => g.definitions.length);
+}
+
+function sensesMessage(text) {
+  const p = document.createElement('p');
+  p.className = 'text-sm text-muted leading-relaxed';
+  p.textContent = text;
+  return p;
+}
+
+function renderSenseGroups(data) {
+  const body = document.getElementById('detailSensesBody');
+  body.innerHTML = '';
+
+  if (!data) {
+    body.appendChild(sensesMessage('英文字典查不到這個詞。片語通常不會收錄在單字字典裡，屬正常情形。'));
+    return;
+  }
+
+  const card = CARDS.find((c) => c.id === detailCardId);
+  if (card && data.matchedWord && data.matchedWord.toLowerCase() !== card.word.toLowerCase()) {
+    const note = sensesMessage(`以原形「${data.matchedWord}」查詢`);
+    note.className = 'text-xs text-muted';
+    body.appendChild(note);
+  }
+
+  data.groups.forEach((group, gi) => {
+    const wrap = document.createElement('div');
+    wrap.className = gi > 0 ? 'border-t border-hair pt-4 space-y-2' : 'space-y-2';
+
+    const head = document.createElement('div');
+    head.className = 'flex items-baseline gap-2';
+    const zh = document.createElement('span');
+    zh.className = 'text-xs font-bold text-amber';
+    zh.textContent = group.posZh || group.pos;
+    head.appendChild(zh);
+    if (group.posZh && group.pos) {
+      const en = document.createElement('span');
+      en.className = 'text-xs text-muted font-mono';
+      en.textContent = group.pos;
+      head.appendChild(en);
+    }
+    wrap.appendChild(head);
+
+    const list = document.createElement('ol');
+    list.className = 'space-y-2.5';
+    group.definitions.forEach((def, di) => {
+      const li = document.createElement('li');
+      li.className = 'flex gap-2.5';
+
+      const num = document.createElement('span');
+      num.className = 'text-xs text-muted font-mono shrink-0 pt-0.5';
+      num.textContent = String(di + 1);
+      li.appendChild(num);
+
+      const col = document.createElement('div');
+      col.className = 'min-w-0 space-y-1';
+      const d = document.createElement('p');
+      d.className = 'text-sm text-paper leading-relaxed';
+      d.textContent = def.text;
+      col.appendChild(d);
+      if (def.example) {
+        const ex = document.createElement('p');
+        ex.className = 'text-xs text-muted font-serif italic leading-relaxed';
+        ex.textContent = '「' + def.example + '」';
+        col.appendChild(ex);
+      }
+      if (def.synonyms && def.synonyms.length) {
+        const syn = document.createElement('p');
+        syn.className = 'text-xs text-muted leading-relaxed';
+        syn.textContent = '近義：' + def.synonyms.join('、');
+        col.appendChild(syn);
+      }
+      li.appendChild(col);
+      list.appendChild(li);
+    });
+    wrap.appendChild(list);
+
+    if (group.total > group.definitions.length) {
+      const more = document.createElement('p');
+      more.className = 'text-xs text-muted';
+      more.textContent = `另有 ${group.total - group.definitions.length} 個較少用的義項未列出`;
+      wrap.appendChild(more);
+    }
+
+    body.appendChild(wrap);
+  });
+
+  const credit = document.createElement('p');
+  credit.className = 'text-xs text-muted pt-1';
+  credit.textContent = '資料來源：dictionaryapi.dev';
+  body.appendChild(credit);
+}
+
+function resetSensesBlock() {
+  const body = document.getElementById('detailSensesBody');
+  const toggle = document.getElementById('detailSensesToggle');
+  body.classList.add('hidden');
+  body.innerHTML = '';
+  toggle.setAttribute('aria-expanded', 'false');
+  document.getElementById('detailSensesChevron').style.transform = '';
+  document.getElementById('detailSensesHint').textContent = '點開查詢';
+}
+
+async function loadSenses(word) {
+  const hint = document.getElementById('detailSensesHint');
+  const body = document.getElementById('detailSensesBody');
+
+  if (sensesCache.has(word)) {
+    const cached = sensesCache.get(word);
+    hint.textContent = cached ? `${cached.groups.length} 種詞性` : '查無資料';
+    renderSenseGroups(cached);
+    return;
+  }
+
+  if (sensesLoading) return;
+  sensesLoading = true;
+  hint.textContent = '查詢中…';
+  body.innerHTML = '';
+  body.appendChild(sensesMessage('查詢中…'));
+
+  const found = await lookupEnDictionaryAll(word);
+  const data = found ? { groups: extractSenseGroups(found.entries), matchedWord: found.matchedWord } : null;
+  const usable = data && data.groups.length ? data : null;
+  sensesCache.set(word, usable);
+  sensesLoading = false;
+
+  // 查詢期間可能已經切到別張卡，這時不要把結果畫到新卡上
+  const current = CARDS.find((c) => c.id === detailCardId);
+  if (!current || current.word !== word) return;
+
+  hint.textContent = usable ? `${usable.groups.length} 種詞性` : '查無資料';
+  renderSenseGroups(usable);
+}
+
+document.getElementById('detailSensesToggle').addEventListener('click', () => {
+  const body = document.getElementById('detailSensesBody');
+  const toggle = document.getElementById('detailSensesToggle');
+  const chevron = document.getElementById('detailSensesChevron');
+  const willOpen = body.classList.contains('hidden');
+
+  body.classList.toggle('hidden', !willOpen);
+  toggle.setAttribute('aria-expanded', String(willOpen));
+  chevron.style.transform = willOpen ? 'rotate(180deg)' : '';
+
+  const card = CARDS.find((c) => c.id === detailCardId);
+  if (willOpen && card) loadSenses(card.word);
+});
 
 function openCardDetail(cardId) {
   detailCardId = cardId;
