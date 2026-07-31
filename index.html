@@ -269,6 +269,25 @@
             <p class="text-sm mt-1 text-paper" id="revealMeaning"></p>
             <p class="text-xs text-muted mt-2 pt-2 border-t border-hair" id="revealSentenceZh"></p>
           </div>
+
+          <!-- 其他語境句：有累積過才顯示，複習時唯讀，編輯/刪除留在字卡管理頁做 -->
+          <div id="reviewExtrasCard" class="hidden bg-surface2 rounded-lg p-3 border border-hair space-y-2">
+            <p class="text-xs text-muted">你自己遇過的其他語境句（<span id="reviewExtrasCount">0</span>）</p>
+            <div id="reviewExtrasList" class="space-y-2"></div>
+          </div>
+
+          <!-- 其他用法：剛認識（選擇題階段）翻牌自動展開，熟悉後（拼寫階段）收合點開查 -->
+          <div class="bg-surface2 rounded-lg p-3 border border-hair">
+            <button id="reviewSensesToggle" type="button" class="w-full flex items-center justify-between gap-3 text-left" aria-expanded="false" aria-controls="reviewSensesBody">
+              <span class="specimen-tag">其他用法</span>
+              <span class="flex items-center gap-2 shrink-0">
+                <span id="reviewSensesHint" class="text-xs text-muted">點開查詢</span>
+                <svg id="reviewSensesChevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="text-muted transition-transform duration-200"><path d="m6 9 6 6 6-6"/></svg>
+              </span>
+            </button>
+            <div id="reviewSensesBody" class="hidden mt-4 space-y-4"></div>
+          </div>
+
           <p class="text-xs text-muted">這張卡片你記得多熟？</p>
           <div class="grid grid-cols-5 gap-2">
             <button data-score="1" class="score-btn bg-red-500/80 hover:bg-red-500 py-2 rounded-lg text-white flex flex-col items-center leading-tight">
@@ -1916,6 +1935,64 @@ function revealAnswer(isCorrect) {
   document.getElementById('revealArea').classList.remove('hidden');
   document.getElementById('typeAnswerArea').classList.add('hidden');
   document.getElementById('choiceAnswerArea').classList.add('hidden');
+
+  renderReviewExtras(currentReviewCard);
+  resetSensesBlock(REVIEW_SENSES_IDS);
+  // 剛認識的字（還在選擇題階段）翻牌就自動展開其他用法，幫助建立字義的廣度印象；
+  // 熟悉後（拼寫階段）收回去，不打斷已經上手的複習節奏
+  if (getReviewStage(currentReviewCard) === 'choice') {
+    const word = currentReviewCard.word;
+    document.getElementById('reviewSensesBody').classList.remove('hidden');
+    document.getElementById('reviewSensesToggle').setAttribute('aria-expanded', 'true');
+    document.getElementById('reviewSensesChevron').style.transform = 'rotate(180deg)';
+    document.getElementById('reviewSensesHint').textContent = '查詢中…';
+    loadSenses(word, REVIEW_SENSES_IDS, () => !!currentReviewCard && currentReviewCard.word === word);
+  }
+}
+
+// 其他語境句的複習版：跟字卡管理頁同樣的資料來源，但唯讀，不提供刪除
+function renderReviewExtras(card) {
+  const wrap = document.getElementById('reviewExtrasCard');
+  const list = document.getElementById('reviewExtrasList');
+  const extras = Array.isArray(card.extraSentences) ? card.extraSentences : [];
+
+  list.innerHTML = '';
+  if (!extras.length) {
+    wrap.classList.add('hidden');
+    return;
+  }
+  wrap.classList.remove('hidden');
+  document.getElementById('reviewExtrasCount').textContent = extras.length;
+
+  extras.forEach((s) => {
+    const item = document.createElement('div');
+    item.className = 'border-t border-hair pt-2 space-y-1 first:border-t-0 first:pt-0';
+
+    const row = document.createElement('div');
+    row.className = 'flex items-start justify-between gap-2';
+    const en = document.createElement('p');
+    en.className = 'text-sm text-paper font-serif leading-relaxed min-w-0';
+    en.textContent = s.text;
+    row.appendChild(en);
+
+    const speak = document.createElement('button');
+    speak.type = 'button';
+    speak.className = 'text-muted hover:text-amber shrink-0';
+    speak.title = '朗讀這句';
+    speak.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4V5Z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/></svg>';
+    speak.addEventListener('click', () => speakSentence(s.text));
+    row.appendChild(speak);
+    item.appendChild(row);
+
+    if (s.zh) {
+      const zh = document.createElement('p');
+      zh.className = 'text-xs text-muted leading-relaxed';
+      zh.textContent = s.zh;
+      item.appendChild(zh);
+    }
+
+    list.appendChild(item);
+  });
 }
 
 document.getElementById('checkAnswerBtn').addEventListener('click', () => {
@@ -2913,7 +2990,7 @@ function renderDetailPage() {
 
   renderDetailAccents(card);
   renderDetailExtras(card);
-  resetSensesBlock(); // 換一張卡就收回去，不要把上一張的義項留在畫面上
+  resetSensesBlock(DETAIL_SENSES_IDS); // 換一張卡就收回去，不要把上一張的義項留在畫面上
 
   // 舊卡沒有腔調資料，在這裡補查一次並存回卡片，讓它自己慢慢補齊
   if (!card.accents) {
@@ -2988,8 +3065,8 @@ function sensesMessage(text) {
   return p;
 }
 
-function renderSenseGroups(data) {
-  const body = document.getElementById('detailSensesBody');
+function renderSenseGroups(data, ids, queriedWord) {
+  const body = document.getElementById(ids.body);
   body.innerHTML = '';
 
   if (!data) {
@@ -2997,8 +3074,7 @@ function renderSenseGroups(data) {
     return;
   }
 
-  const card = CARDS.find((c) => c.id === detailCardId);
-  if (card && data.matchedWord && data.matchedWord.toLowerCase() !== card.word.toLowerCase()) {
+  if (queriedWord && data.matchedWord && data.matchedWord.toLowerCase() !== queriedWord.toLowerCase()) {
     const note = sensesMessage(`以原形「${data.matchedWord}」查詢`);
     note.className = 'text-xs text-muted';
     body.appendChild(note);
@@ -3115,24 +3191,24 @@ function renderSenseGroups(data) {
   }
 }
 
-function resetSensesBlock() {
-  const body = document.getElementById('detailSensesBody');
-  const toggle = document.getElementById('detailSensesToggle');
+function resetSensesBlock(ids) {
+  const body = document.getElementById(ids.body);
+  const toggle = document.getElementById(ids.toggle);
   body.classList.add('hidden');
   body.innerHTML = '';
   toggle.setAttribute('aria-expanded', 'false');
-  document.getElementById('detailSensesChevron').style.transform = '';
-  document.getElementById('detailSensesHint').textContent = '點開查詢';
+  document.getElementById(ids.chevron).style.transform = '';
+  document.getElementById(ids.hint).textContent = '點開查詢';
 }
 
-async function loadSenses(word) {
-  const hint = document.getElementById('detailSensesHint');
-  const body = document.getElementById('detailSensesBody');
+async function loadSenses(word, ids, isStillCurrent) {
+  const hint = document.getElementById(ids.hint);
+  const body = document.getElementById(ids.body);
 
   if (sensesCache.has(word)) {
     const cached = sensesCache.get(word);
     hint.textContent = cached ? `${cached.groups.length} 種詞性` : '查無資料';
-    renderSenseGroups(cached);
+    renderSenseGroups(cached, ids, word);
     return;
   }
 
@@ -3161,9 +3237,8 @@ async function loadSenses(word) {
   sensesCache.set(word, usable);
   sensesLoading = false;
 
-  // 查詢期間可能已經切到別張卡，這時不要把結果畫到新卡上
-  const current = CARDS.find((c) => c.id === detailCardId);
-  if (!current || current.word !== word) return;
+  // 查詢期間可能已經切到別張卡（詳細頁換卡、或複習翻到下一張），這時不要把結果畫到新卡上
+  if (!isStillCurrent()) return;
 
   if (usable) {
     const parts = [];
@@ -3173,22 +3248,34 @@ async function loadSenses(word) {
   } else {
     hint.textContent = '查無資料';
   }
-  renderSenseGroups(usable);
+  renderSenseGroups(usable, ids, word);
 }
 
-document.getElementById('detailSensesToggle').addEventListener('click', () => {
-  const body = document.getElementById('detailSensesBody');
-  const toggle = document.getElementById('detailSensesToggle');
-  const chevron = document.getElementById('detailSensesChevron');
-  const willOpen = body.classList.contains('hidden');
+const DETAIL_SENSES_IDS = { body: 'detailSensesBody', toggle: 'detailSensesToggle', chevron: 'detailSensesChevron', hint: 'detailSensesHint' };
+const REVIEW_SENSES_IDS = { body: 'reviewSensesBody', toggle: 'reviewSensesToggle', chevron: 'reviewSensesChevron', hint: 'reviewSensesHint' };
 
-  body.classList.toggle('hidden', !willOpen);
-  toggle.setAttribute('aria-expanded', String(willOpen));
-  chevron.style.transform = willOpen ? 'rotate(180deg)' : '';
+// 詳細頁與複習翻牌共用同一套「其他用法」收合邏輯，只是查詢對象（哪張卡的字）不同
+function bindSensesToggle(ids, getCurrentWord) {
+  document.getElementById(ids.toggle).addEventListener('click', () => {
+    const body = document.getElementById(ids.body);
+    const toggle = document.getElementById(ids.toggle);
+    const chevron = document.getElementById(ids.chevron);
+    const willOpen = body.classList.contains('hidden');
 
+    body.classList.toggle('hidden', !willOpen);
+    toggle.setAttribute('aria-expanded', String(willOpen));
+    chevron.style.transform = willOpen ? 'rotate(180deg)' : '';
+
+    const word = getCurrentWord();
+    if (willOpen && word) loadSenses(word, ids, () => getCurrentWord() === word);
+  });
+}
+
+bindSensesToggle(DETAIL_SENSES_IDS, () => {
   const card = CARDS.find((c) => c.id === detailCardId);
-  if (willOpen && card) loadSenses(card.word);
+  return card ? card.word : null;
 });
+bindSensesToggle(REVIEW_SENSES_IDS, () => currentReviewCard ? currentReviewCard.word : null);
 
 function openCardDetail(cardId) {
   detailCardId = cardId;
