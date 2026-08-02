@@ -103,7 +103,7 @@
 <body class="bg-ink text-paper min-h-screen pb-20 font-sans">
 
 <!-- ============ 頂部標題列 ============ -->
-<header class="sticky top-0 z-20 bg-ink/95 backdrop-blur border-b border-hair px-4 py-3 flex items-center justify-between">
+<header class="sticky top-0 z-20 bg-ink/95 backdrop-blur border-b border-hair px-4 py-3 flex items-center justify-between" style="padding-top: calc(0.75rem + env(safe-area-inset-top));">
   <h1 class="text-base font-serif tracking-wide text-paper flex items-center gap-2">
     <img src="./icon-192.png" alt="" class="w-6 h-6 rounded-md">
     <span>英英美代誌 · 語境採集本</span>
@@ -520,13 +520,14 @@
       <button id="quickaddBackBtn" class="text-xs text-muted hover:text-paper">← 返回首頁</button>
     </div>
     <p class="text-xs text-muted">已用底線標出可能不熟悉的生字，點擊查詢並建卡；整句會自動存為語境，不用自己貼。</p>
+    <button id="quickaddPasteBtn" class="hidden btn-primary w-full py-3 rounded-lg">📋 貼上剪貼簿內容</button>
     <div id="quickaddList" class="space-y-3"></div>
   </section>
 
 </main>
 
 <!-- ============ 底部導覽列 ============ -->
-<nav class="fixed bottom-0 left-0 right-0 bg-surface border-t border-hair flex justify-around py-2 z-20">
+<nav class="fixed bottom-0 left-0 right-0 bg-surface border-t border-hair flex justify-around py-2 z-20" style="padding-bottom: calc(0.5rem + env(safe-area-inset-bottom));">
   <button data-page="home" class="tab-btn active flex flex-col items-center gap-1 text-xs px-2 py-1">
     <span class="tab-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11 12 4l9 7"/><path d="M5 10v9h14v-9"/></svg></span>首頁
   </button>
@@ -857,6 +858,7 @@ function addDays(days) {
 // 從網址參數帶入文字（Android 分享 / iOS 捷徑 / 手動輸入共用同一邏輯）
 // v3：改為進「快速建卡」畫面逐句操作，不再自動把整段文字塞成一堆待處理字卡
 let pendingQuickAddText = '';
+let pendingPasteMode = false;
 
 function parseUrlText() {
   const params = new URLSearchParams(window.location.search);
@@ -864,6 +866,10 @@ function parseUrlText() {
   if (text) {
     pendingQuickAddText = decodeURIComponent(text);
     // 清掉網址參數，避免重新整理時重複匯入
+    history.replaceState(null, '', window.location.pathname);
+  }
+  if (params.get('paste') === '1') {
+    pendingPasteMode = true;
     history.replaceState(null, '', window.location.pathname);
   }
 }
@@ -1013,10 +1019,25 @@ function renderSentenceBlocks(containerId) {
 }
 
 function renderQuickAdd(text) {
+  document.getElementById('quickaddPasteBtn').classList.add('hidden');
   renderClickableText(text, 'quickaddList');
 }
 
 document.getElementById('quickaddBackBtn').addEventListener('click', () => switchPage('home'));
+
+// 手機捷徑分享的長句子塞進網址常會在傳遞過程中被截斷（URL 長度/編碼限制因裝置而異，
+// 且很難從對話裡遠端排查），改走剪貼簿完全避開這個問題：捷徑只負責「拷貝到剪貼簿」，
+// App 這邊看到 ?paste=1 就出現按鈕，使用者按一下才讀取（iOS 讀剪貼簿需要使用者直接點擊
+// 這個動作才會被允許，不能開頁面就自動讀）。
+document.getElementById('quickaddPasteBtn').addEventListener('click', async () => {
+  try {
+    const text = await navigator.clipboard.readText();
+    if (!text || !text.trim()) { toast('剪貼簿是空的'); return; }
+    renderQuickAdd(text);
+  } catch (e) {
+    toast('讀取剪貼簿失敗，請確認已允許貼上權限');
+  }
+});
 
 // 簡易斷句：依 . ! ? 斷開，並保留原文
 function splitSentences(text) {
@@ -3355,6 +3376,11 @@ async function init() {
   if (pendingQuickAddText) {
     renderQuickAdd(pendingQuickAddText);
     switchPage('quickadd');
+  } else if (pendingPasteMode) {
+    pendingPasteMode = false;
+    document.getElementById('quickaddList').innerHTML = '';
+    document.getElementById('quickaddPasteBtn').classList.remove('hidden');
+    switchPage('quickadd');
   }
 
   // 若這個分頁是被 YouTube 那邊的腳本用 window.open 開啟的，回報「準備好了」
@@ -3380,6 +3406,11 @@ window.addEventListener('pageshow', (event) => {
   parseUrlText();
   if (pendingQuickAddText) {
     renderQuickAdd(pendingQuickAddText);
+    switchPage('quickadd');
+  } else if (pendingPasteMode) {
+    pendingPasteMode = false;
+    document.getElementById('quickaddList').innerHTML = '';
+    document.getElementById('quickaddPasteBtn').classList.remove('hidden');
     switchPage('quickadd');
   }
 });
