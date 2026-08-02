@@ -520,9 +520,6 @@
       <button id="quickaddBackBtn" class="text-xs text-muted hover:text-paper">← 返回首頁</button>
     </div>
     <p class="text-xs text-muted">已用底線標出可能不熟悉的生字，點擊查詢並建卡；整句會自動存為語境，不用自己貼。</p>
-    <!-- 暫時性偵錯：顯示「實際收到的原始文字」長度與尾巴，用來判斷文字是在傳入前就被
-         截斷、還是進來之後才被處理掉。問題釐清後移除。 -->
-    <p id="quickaddDebug" class="hidden text-[11px] font-mono text-amber bg-surface2 border border-hair rounded-lg p-2 break-all"></p>
     <div id="quickaddList" class="space-y-3"></div>
   </section>
 
@@ -908,8 +905,16 @@ function stripUrls(text) {
   // Android 分享網頁劃線片段時，網址常帶 #:~:text=（後面接的是不含 % 編碼的可讀文字，
   // 中間有空白），單純用「遇到空白就停」的規則會漏掉後半段，殘留一堆垃圾字黏在句子裡。
   // 所以網址本體只吃到第一個空白或 #，剩下 #:~:text= 之後的整段（含空白）一起連號吃掉。
-  return text
+  const stripped = text
     .replace(/https?:\/\/[^\s#]*(?:#:~:text=[^\n]*)?/g, ' ')
+    .replace(/[ \t]{2,}/g, ' ')
+    .trim();
+  if (stripped) return stripped;
+  // 防呆：上面「吃到行尾」的規則假設網址在該行最後面。萬一網址排在正文前面（同一行），
+  // 整行正文會被連帶吃光變成空白，畫面直接開天窗。這時退回只吃網址本身的保守規則，
+  // 寧可殘留一點網址碎片，也不要讓使用者分享的內容整段消失。
+  return text
+    .replace(/https?:\/\/\S*/g, ' ')
     .replace(/[ \t]{2,}/g, ' ')
     .trim();
 }
@@ -1023,19 +1028,7 @@ function renderSentenceBlocks(containerId) {
 }
 
 function renderQuickAdd(text) {
-  showQuickAddDebug(text);
   renderClickableText(text, 'quickaddList');
-}
-
-// 暫時性偵錯：把「App 實際收到的原始文字」攤開來看。原始長度跟使用者選取的長度一比，
-// 就知道文字是在送進來之前就被截斷，還是進來之後被斷句/去重邏輯處理掉的。
-function showQuickAddDebug(text) {
-  const el = document.getElementById('quickaddDebug');
-  if (!el) return;
-  const lineCount = text.split('\n').length;
-  const tail = text.slice(-40).replace(/\n/g, '⏎');
-  el.textContent = `［偵錯］收到 ${text.length} 字、${lineCount} 行；結尾：…${tail}`;
-  el.classList.remove('hidden');
 }
 
 document.getElementById('quickaddBackBtn').addEventListener('click', () => switchPage('home'));
