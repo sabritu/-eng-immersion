@@ -520,6 +520,9 @@
       <button id="quickaddBackBtn" class="text-xs text-muted hover:text-paper">← 返回首頁</button>
     </div>
     <p class="text-xs text-muted">已用底線標出可能不熟悉的生字，點擊查詢並建卡；整句會自動存為語境，不用自己貼。</p>
+    <!-- 暫時性偵錯：顯示「實際收到的原始文字」長度與尾巴，用來判斷文字是在傳入前就被
+         截斷、還是進來之後才被處理掉。問題釐清後移除。 -->
+    <p id="quickaddDebug" class="hidden text-[11px] font-mono text-amber bg-surface2 border border-hair rounded-lg p-2 break-all"></p>
     <div id="quickaddList" class="space-y-3"></div>
   </section>
 
@@ -1020,7 +1023,19 @@ function renderSentenceBlocks(containerId) {
 }
 
 function renderQuickAdd(text) {
+  showQuickAddDebug(text);
   renderClickableText(text, 'quickaddList');
+}
+
+// 暫時性偵錯：把「App 實際收到的原始文字」攤開來看。原始長度跟使用者選取的長度一比，
+// 就知道文字是在送進來之前就被截斷，還是進來之後被斷句/去重邏輯處理掉的。
+function showQuickAddDebug(text) {
+  const el = document.getElementById('quickaddDebug');
+  if (!el) return;
+  const lineCount = text.split('\n').length;
+  const tail = text.slice(-40).replace(/\n/g, '⏎');
+  el.textContent = `［偵錯］收到 ${text.length} 字、${lineCount} 行；結尾：…${tail}`;
+  el.classList.remove('hidden');
 }
 
 document.getElementById('quickaddBackBtn').addEventListener('click', () => switchPage('home'));
