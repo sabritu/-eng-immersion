@@ -352,13 +352,18 @@
     <!-- iPhone 專用：捷徑只能叫 Safari 開網址，而 Safari 跟主畫面 App 的資料是分開的。
          把同步碼寫進捷徑用的網址，Safari 那邊建完卡就會自動送回主畫面 App。 -->
     <div id="shortcutUrlCard" class="hidden specimen-card p-4 space-y-3">
-      <p class="specimen-tag">iPhone 捷徑專用網址</p>
-      <p class="text-xs text-muted">iPhone 用捷徑分享時只能開 Safari，而 Safari 跟主畫面 App 的字卡是分開存的。把下面這條網址貼進捷徑（取代原本那條），Safari 建的卡就會自動回到主畫面 App，你不用做任何事。</p>
+      <p class="specimen-tag">iPhone：讓捷徑建的卡回到這裡</p>
+      <p class="text-xs text-muted">iPhone 用捷徑分享時只能開 Safari，而 Safari 跟主畫面 App 的字卡是分開存的。做完下面其中一種設定，Safari 建的卡就會自動回到主畫面 App，之後你不用做任何事。</p>
+
+      <p class="text-xs text-paper pt-1">方法一（推薦，不用碰捷徑）</p>
+      <p class="text-xs text-muted">用 <strong>Safari</strong> 打開這個 App（不是點主畫面圖示），進「資料」分頁，把上面那組同步碼貼進去，按一次「立即同步」。填一次就會一直記著。</p>
+
+      <p class="text-xs text-paper pt-1">方法二：把同步碼寫進捷徑網址</p>
       <div class="bg-surface2 border border-hair rounded-lg p-2.5">
         <code id="shortcutUrlText" class="text-xs font-mono text-amber break-all"></code>
       </div>
       <button id="copyShortcutUrlBtn" class="btn-quiet w-full py-2.5 rounded-lg text-sm">複製這條網址</button>
-      <p class="text-xs text-muted">貼法：捷徑 →「文字」那塊 → 把整段內容換成這條，後面原本的「URL 編碼文字」變數保持接在最後面。</p>
+      <p class="text-xs text-muted">貼進捷徑「文字」那塊時，<strong>只取代開頭到 <code>text=</code> 為止的那串文字</strong>；最後面藍色的「URL 編碼文字」變數一定要留著，把它刪掉的話網址就不會帶句子過去，分享後只會停在首頁。</p>
     </div>
 
     <h2 class="text-lg font-serif text-paper pt-2">提醒設定</h2>
