@@ -349,21 +349,12 @@
       <p class="text-xs text-muted">第一次使用：在其中一台按「產生新的同步碼」再按「複製」，把碼傳到另一台貼上，兩台各按一次「立即同步」。</p>
     </div>
 
-    <!-- iPhone 專用：捷徑只能叫 Safari 開網址，而 Safari 跟主畫面 App 的資料是分開的。
-         把同步碼寫進捷徑用的網址，Safari 那邊建完卡就會自動送回主畫面 App。 -->
-    <div id="shortcutUrlCard" class="hidden specimen-card p-4 space-y-3">
-      <p class="specimen-tag">iPhone：讓捷徑建的卡回到這裡</p>
-      <p class="text-xs text-muted">iPhone 用捷徑分享時只能開 Safari，而 Safari 跟主畫面 App 的字卡是分開存的。做完下面其中一種設定，Safari 建的卡就會自動回到主畫面 App，之後你不用做任何事。</p>
-
-      <p class="text-xs text-paper pt-1">方法一（推薦，不用碰捷徑）</p>
-      <p class="text-xs text-muted">用 <strong>Safari</strong> 打開這個 App（不是點主畫面圖示），進「資料」分頁，把上面那組同步碼貼進去，按一次「立即同步」。填一次就會一直記著。</p>
-
-      <p class="text-xs text-paper pt-1">方法二：把同步碼寫進捷徑網址</p>
-      <div class="bg-surface2 border border-hair rounded-lg p-2.5">
-        <code id="shortcutUrlText" class="text-xs font-mono text-amber break-all"></code>
-      </div>
-      <button id="copyShortcutUrlBtn" class="btn-quiet w-full py-2.5 rounded-lg text-sm">複製這條網址</button>
-      <p class="text-xs text-muted">貼進捷徑「文字」那塊時，<strong>只取代開頭到 <code>text=</code> 為止的那串文字</strong>；最後面藍色的「URL 編碼文字」變數一定要留著，把它刪掉的話網址就不會帶句子過去，分享後只會停在首頁。</p>
+    <!-- iPhone 專用提示：捷徑只能叫 Safari 開網址，而 Safari 跟主畫面 App 的資料是分開的，
+         所以 Safari 那一份也要設定同一組同步碼，兩邊才會自動互通。 -->
+    <div id="iosSyncHint" class="hidden specimen-card p-4 space-y-2">
+      <p class="specimen-tag">iPhone 使用者請多做一步</p>
+      <p class="text-xs text-muted">iPhone 用捷徑分享時只能開 Safari，而 Safari 跟主畫面 App 的字卡是<strong>分開存的</strong>。請用 <strong>Safari</strong> 再打開一次這個 App（不是點主畫面圖示），進「資料」分頁把上面那組同步碼貼進去，按一次「立即同步」。</p>
+      <p class="text-xs text-muted">設定一次就好。之後在 Safari 建的字卡會自動上傳，打開主畫面 App 時自動收下來，你不用再管。</p>
     </div>
 
     <h2 class="text-lg font-serif text-paper pt-2">提醒設定</h2>
@@ -877,17 +868,6 @@ let pendingQuickAddText = '';
 
 function parseUrlText() {
   const params = new URLSearchParams(window.location.search);
-
-  // iOS 捷徑用的網址會把同步碼一起帶進來。Safari 這一份儲存空間跟主畫面 App 是分開的，
-  // 沒有這個參數的話它永遠不知道自己該同步到哪裡去，在這裡建的字卡就會變成孤兒。
-  const code = (params.get('code') || '').trim().toUpperCase();
-  if (code && SYNC_CODE_PATTERN.test(code)) {
-    const settings = loadSettings();
-    if (settings.syncCode !== code) {
-      settings.syncCode = code;
-      saveSettings(settings);
-    }
-  }
 
   const text = params.get('text') || params.get('url') || '';
   if (text) {
@@ -2501,24 +2481,10 @@ function scheduleAutoSync() {
       : (code ? '尚未同步過' : '尚未設定同步碼');
   }
 
-  // 有同步碼才顯示，沒有的話這條網址沒有意義
+  // 有同步碼才提示，沒設定同步碼的話這段說明沒有意義
   function renderShortcutUrl() {
-    const card = document.getElementById('shortcutUrlCard');
-    const code = loadSyncCode();
-    if (!code) { card.classList.add('hidden'); return; }
-    const base = location.origin + location.pathname.replace(/[^/]*$/, '');
-    document.getElementById('shortcutUrlText').textContent = `${base}?code=${code}&text=`;
-    card.classList.remove('hidden');
+    document.getElementById('iosSyncHint').classList.toggle('hidden', !loadSyncCode());
   }
-
-  document.getElementById('copyShortcutUrlBtn').addEventListener('click', async () => {
-    try {
-      await navigator.clipboard.writeText(document.getElementById('shortcutUrlText').textContent);
-      toast('已複製，貼進捷徑的「文字」動作裡');
-    } catch (e) {
-      toast('複製失敗，請長按上面那串手動複製');
-    }
-  });
 
   // 打滿 6 碼就自動存起來，不用再按一顆「儲存」——那顆按鈕除了多一個步驟
   // 之外沒有任何作用，使用者還會誤以為它是「複製」
