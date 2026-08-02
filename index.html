@@ -527,7 +527,13 @@
       <h2 class="text-lg font-serif text-paper">快速建卡</h2>
       <button id="quickaddBackBtn" class="text-xs text-muted hover:text-paper">← 返回首頁</button>
     </div>
-    <p class="text-xs text-muted">已用底線標出可能不熟悉的生字，點擊查詢並建卡；整句會自動存為語境，不用自己貼。</p>
+    <p id="quickaddIntro" class="text-xs text-muted">已用底線標出可能不熟悉的生字，點擊查詢並建卡；整句會自動存為語境，不用自己貼。</p>
+    <div id="quickaddEmptyShare" class="hidden specimen-card p-4 space-y-2">
+      <p class="specimen-tag">這次分享沒有帶到文字</p>
+      <p class="text-xs text-muted">捷徑有正常執行，但它從來源 App 手上接到的是空的，所以沒有句子可以建卡。這通常代表那個 App 分享出來的不是純文字（有些新聞、社群 App 只給網頁連結）。</p>
+      <p class="text-xs text-muted">試試看：改用 <strong>Safari</strong> 打開同一篇文章，選取文字再分享一次。如果 Safari 可以、原本那個 App 不行，就是該 App 的限制，捷徑與這個 App 都無法改變。</p>
+      <p class="text-xs text-muted">也可以直接用「採集」分頁，把文字複製後貼進去，效果一樣。</p>
+    </div>
     <div id="quickaddList" class="space-y-3"></div>
   </section>
 
@@ -865,11 +871,20 @@ function addDays(days) {
 // 從網址參數帶入文字（Android 分享 / iOS 捷徑 / 手動輸入共用同一邏輯）
 // v3：改為進「快速建卡」畫面逐句操作，不再自動把整段文字塞成一堆待處理字卡
 let pendingQuickAddText = '';
+// 分享確實發生了（網址帶了 text 參數），但內容是空的。iOS 捷徑遇到來源 App 給不出
+// 純文字時會空手往下跑，組出一條結尾停在 text= 的網址。這種情況若靜靜跳回首頁，
+// 使用者會以為捷徑根本沒觸發，實際上是有觸發、只是沒接到東西——兩者該修的地方
+// 完全不同，所以要分得出來並且講清楚。
+let sharedWithEmptyText = false;
 
 function parseUrlText() {
   const params = new URLSearchParams(window.location.search);
 
   const text = params.get('text') || params.get('url') || '';
+  if (!text.trim() && (params.has('text') || params.has('url'))) {
+    sharedWithEmptyText = true;
+    history.replaceState(null, '', window.location.pathname);
+  }
   if (text) {
     // 手機捷徑組網址時偶爾會忘記幫變數做 URL 編碼，直接塞進原始文字，
     // 這種情況 text 本身沒有 % 開頭的編碼序列，decodeURIComponent 對它是安全的
@@ -1037,7 +1052,17 @@ function renderSentenceBlocks(containerId) {
 }
 
 function renderQuickAdd(text) {
+  document.getElementById('quickaddEmptyShare').classList.add('hidden');
+  document.getElementById('quickaddIntro').classList.remove('hidden');
   renderClickableText(text, 'quickaddList');
+}
+
+// 分享有觸發但沒帶到文字時，走這裡說明原因，而不是默默跳回首頁
+function showEmptyShareNotice() {
+  document.getElementById('quickaddList').innerHTML = '';
+  document.getElementById('quickaddIntro').classList.add('hidden');
+  document.getElementById('quickaddEmptyShare').classList.remove('hidden');
+  switchPage('quickadd');
 }
 
 document.getElementById('quickaddBackBtn').addEventListener('click', () => switchPage('home'));
@@ -3452,6 +3477,9 @@ async function init() {
   if (pendingQuickAddText) {
     renderQuickAdd(pendingQuickAddText);
     switchPage('quickadd');
+  } else if (sharedWithEmptyText) {
+    sharedWithEmptyText = false;
+    showEmptyShareNotice();
   }
 
   // 若這個分頁是被 YouTube 那邊的腳本用 window.open 開啟的，回報「準備好了」
@@ -3478,6 +3506,9 @@ window.addEventListener('pageshow', (event) => {
   if (pendingQuickAddText) {
     renderQuickAdd(pendingQuickAddText);
     switchPage('quickadd');
+  } else if (sharedWithEmptyText) {
+    sharedWithEmptyText = false;
+    showEmptyShareNotice();
   }
 });
 
