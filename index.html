@@ -520,7 +520,6 @@
       <button id="quickaddBackBtn" class="text-xs text-muted hover:text-paper">← 返回首頁</button>
     </div>
     <p class="text-xs text-muted">已用底線標出可能不熟悉的生字，點擊查詢並建卡；整句會自動存為語境，不用自己貼。</p>
-    <button id="quickaddPasteBtn" class="hidden btn-primary w-full py-3 rounded-lg">📋 貼上剪貼簿內容</button>
     <div id="quickaddList" class="space-y-3"></div>
   </section>
 
@@ -858,18 +857,20 @@ function addDays(days) {
 // 從網址參數帶入文字（Android 分享 / iOS 捷徑 / 手動輸入共用同一邏輯）
 // v3：改為進「快速建卡」畫面逐句操作，不再自動把整段文字塞成一堆待處理字卡
 let pendingQuickAddText = '';
-let pendingPasteMode = false;
 
 function parseUrlText() {
   const params = new URLSearchParams(window.location.search);
   const text = params.get('text') || params.get('url') || '';
   if (text) {
-    pendingQuickAddText = decodeURIComponent(text);
+    // 手機捷徑組網址時偶爾會忘記幫變數做 URL 編碼，直接塞進原始文字，
+    // 這種情況 text 本身沒有 % 開頭的編碼序列，decodeURIComponent 對它是安全的
+    // no-op；只有極少數情況文字剛好含孤立的 % 字元才會噴錯，這時退回用原始字串。
+    try {
+      pendingQuickAddText = decodeURIComponent(text);
+    } catch (e) {
+      pendingQuickAddText = text;
+    }
     // 清掉網址參數，避免重新整理時重複匯入
-    history.replaceState(null, '', window.location.pathname);
-  }
-  if (params.get('paste') === '1') {
-    pendingPasteMode = true;
     history.replaceState(null, '', window.location.pathname);
   }
 }
@@ -1019,34 +1020,32 @@ function renderSentenceBlocks(containerId) {
 }
 
 function renderQuickAdd(text) {
-  document.getElementById('quickaddPasteBtn').classList.add('hidden');
   renderClickableText(text, 'quickaddList');
 }
 
 document.getElementById('quickaddBackBtn').addEventListener('click', () => switchPage('home'));
-
-// 手機捷徑分享的長句子塞進網址常會在傳遞過程中被截斷（URL 長度/編碼限制因裝置而異，
-// 且很難從對話裡遠端排查），改走剪貼簿完全避開這個問題：捷徑只負責「拷貝到剪貼簿」，
-// App 這邊看到 ?paste=1 就出現按鈕，使用者按一下才讀取（iOS 讀剪貼簿需要使用者直接點擊
-// 這個動作才會被允許，不能開頁面就自動讀）。
-document.getElementById('quickaddPasteBtn').addEventListener('click', async () => {
-  try {
-    const text = await navigator.clipboard.readText();
-    if (!text || !text.trim()) { toast('剪貼簿是空的'); return; }
-    renderQuickAdd(text);
-  } catch (e) {
-    toast('讀取剪貼簿失敗，請確認已允許貼上權限');
-  }
-});
 
 // 簡易斷句：依 . ! ? 斷開，並保留原文
 function splitSentences(text) {
   const trimmed = text.trim();
   if (!trimmed) return [];
   // 分享文字常是「引言／網址(已被清掉)／同一句話又貼一次」這種一行一段的結構，
-  // 換行本身就是明確的段落邊界，先用換行切一輪，段落內再照標點細分句子
+  // 換行大多是段落邊界，先用換行切一輪，段落內再照標點細分句子。
+  // 但換行不一定代表句子結束：網頁排版會把一句話拆成好幾個區塊，iOS 捷徑
+  // 分享時把這些區塊接成一段文字，接縫處就留下句子中間的換行。這種「軟斷行」
+  // 硬切會把一句話變成好幾塊沒頭沒尾的殘句，所以只有前一行結尾是 . ! ?
+  // （允許後面跟著收尾引號或括號）才當成真正的段落邊界，其餘一律接回去。
   const lines = trimmed.split(/\n+/).map((l) => l.trim()).filter(Boolean);
-  const parts = lines.flatMap((line) => line.split(/(?<=[.!?])\s+/).filter(Boolean));
+  const paragraphs = [];
+  lines.forEach((line) => {
+    const prev = paragraphs[paragraphs.length - 1];
+    if (prev && !/[.!?]["'”’)\]]*$/.test(prev)) {
+      paragraphs[paragraphs.length - 1] = prev + ' ' + line;
+    } else {
+      paragraphs.push(line);
+    }
+  });
+  const parts = paragraphs.flatMap((line) => line.split(/(?<=[.!?])\s+/).filter(Boolean));
   return parts.length ? parts : [trimmed];
 }
 
@@ -3376,11 +3375,6 @@ async function init() {
   if (pendingQuickAddText) {
     renderQuickAdd(pendingQuickAddText);
     switchPage('quickadd');
-  } else if (pendingPasteMode) {
-    pendingPasteMode = false;
-    document.getElementById('quickaddList').innerHTML = '';
-    document.getElementById('quickaddPasteBtn').classList.remove('hidden');
-    switchPage('quickadd');
   }
 
   // 若這個分頁是被 YouTube 那邊的腳本用 window.open 開啟的，回報「準備好了」
@@ -3406,11 +3400,6 @@ window.addEventListener('pageshow', (event) => {
   parseUrlText();
   if (pendingQuickAddText) {
     renderQuickAdd(pendingQuickAddText);
-    switchPage('quickadd');
-  } else if (pendingPasteMode) {
-    pendingPasteMode = false;
-    document.getElementById('quickaddList').innerHTML = '';
-    document.getElementById('quickaddPasteBtn').classList.remove('hidden');
     switchPage('quickadd');
   }
 });
