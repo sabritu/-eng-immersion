@@ -349,6 +349,18 @@
       <p class="text-xs text-muted">第一次使用：在其中一台按「產生新的同步碼」再按「複製」，把碼傳到另一台貼上，兩台各按一次「立即同步」。</p>
     </div>
 
+    <!-- iPhone 專用：捷徑只能叫 Safari 開網址，而 Safari 跟主畫面 App 的資料是分開的。
+         把同步碼寫進捷徑用的網址，Safari 那邊建完卡就會自動送回主畫面 App。 -->
+    <div id="shortcutUrlCard" class="hidden specimen-card p-4 space-y-3">
+      <p class="specimen-tag">iPhone 捷徑專用網址</p>
+      <p class="text-xs text-muted">iPhone 用捷徑分享時只能開 Safari，而 Safari 跟主畫面 App 的字卡是分開存的。把下面這條網址貼進捷徑（取代原本那條），Safari 建的卡就會自動回到主畫面 App，你不用做任何事。</p>
+      <div class="bg-surface2 border border-hair rounded-lg p-2.5">
+        <code id="shortcutUrlText" class="text-xs font-mono text-amber break-all"></code>
+      </div>
+      <button id="copyShortcutUrlBtn" class="btn-quiet w-full py-2.5 rounded-lg text-sm">複製這條網址</button>
+      <p class="text-xs text-muted">貼法：捷徑 →「文字」那塊 → 把整段內容換成這條，後面原本的「URL 編碼文字」變數保持接在最後面。</p>
+    </div>
+
     <h2 class="text-lg font-serif text-paper pt-2">提醒設定</h2>
 
     <div class="specimen-card p-4 space-y-3">
@@ -860,6 +872,18 @@ let pendingQuickAddText = '';
 
 function parseUrlText() {
   const params = new URLSearchParams(window.location.search);
+
+  // iOS 捷徑用的網址會把同步碼一起帶進來。Safari 這一份儲存空間跟主畫面 App 是分開的，
+  // 沒有這個參數的話它永遠不知道自己該同步到哪裡去，在這裡建的字卡就會變成孤兒。
+  const code = (params.get('code') || '').trim().toUpperCase();
+  if (code && SYNC_CODE_PATTERN.test(code)) {
+    const settings = loadSettings();
+    if (settings.syncCode !== code) {
+      settings.syncCode = code;
+      saveSettings(settings);
+    }
+  }
+
   const text = params.get('text') || params.get('url') || '';
   if (text) {
     // 手機捷徑組網址時偶爾會忘記幫變數做 URL 編碼，直接塞進原始文字，
@@ -1688,6 +1712,8 @@ document.getElementById('modalSaveBtn').addEventListener('click', () => {
   persist();
   document.getElementById('lookupModal').classList.add('hidden');
   toast('已儲存字卡');
+  // 在瀏覽器（iPhone 走捷徑時的情況）建的卡，自動送回主畫面 App
+  scheduleAutoSync();
 });
 
 /* =========================================================
@@ -2181,6 +2207,18 @@ function checkDueOnVisible() {
   if (document.visibilityState !== 'visible') return;
   renderDashboard();
   syncDueDateToLine();
+  // 切回前景就順手收一次：iPhone 用捷徑在 Safari 建的字卡靠這一步回到主畫面 App
+  pullCardsIfStale();
+}
+
+// 每次切前景都打伺服器太頻繁，隔一段時間才真的跑一次
+const AUTO_PULL_MIN_GAP_MS = 3 * 60 * 1000;
+let lastAutoPullAt = 0;
+function pullCardsIfStale() {
+  if (!performCardSync || !loadSettings().syncCode) return;
+  if (Date.now() - lastAutoPullAt < AUTO_PULL_MIN_GAP_MS) return;
+  lastAutoPullAt = Date.now();
+  performCardSync({ silent: true });
 }
 
 document.addEventListener('visibilitychange', checkDueOnVisible);
@@ -2405,6 +2443,26 @@ async function syncDueDateToLine() {
    兩邊就會一致。合併在裝置上做，Worker 只當保管箱，不解讀內容。 */
 const SYNC_CODE_PATTERN = new RegExp('^[' + PAIR_CODE_ALPHABET + ']{6}$');
 
+// iOS 的主畫面 App 與 Safari 各有一份互不相通的儲存空間，而 iOS 捷徑只能叫瀏覽器
+// 開網址、沒辦法把資料交給主畫面 App。因此 iPhone 用捷徑建的字卡一律落在 Safari，
+// 主畫面 App 完全看不到，等於資料分裂成兩份。既然平台繞不過去，就讓同步自己跑：
+// 建完卡自動上傳，切回前景自動取回，兩邊都做、使用者全程無感。
+
+// 由 initCardSync() 填入，讓自動同步與畫面上的「立即同步」共用同一套合併邏輯
+let performCardSync = null;
+
+// 同步區塊在指令碼載入時就初始化完畢，那時 parseUrlText() 還沒跑，網址帶進來的
+// 同步碼還沒存進設定，畫面會停在「沒有同步碼」的狀態。init() 解析完網址後再叫它重畫。
+let refreshSyncUi = null;
+
+// 自動上傳會在連續建卡時被觸發很多次，集中成一次送出就好
+let autoSyncTimer = null;
+function scheduleAutoSync() {
+  if (!performCardSync || !loadSettings().syncCode) return;
+  clearTimeout(autoSyncTimer);
+  autoSyncTimer = setTimeout(() => performCardSync({ silent: true }), 2500);
+}
+
 (function initCardSync() {
   const codeInput = document.getElementById('syncCodeInput');
   const copyCodeBtn = document.getElementById('syncCopyCodeBtn');
@@ -2438,6 +2496,25 @@ const SYNC_CODE_PATTERN = new RegExp('^[' + PAIR_CODE_ALPHABET + ']{6}$');
       : (code ? '尚未同步過' : '尚未設定同步碼');
   }
 
+  // 有同步碼才顯示，沒有的話這條網址沒有意義
+  function renderShortcutUrl() {
+    const card = document.getElementById('shortcutUrlCard');
+    const code = loadSyncCode();
+    if (!code) { card.classList.add('hidden'); return; }
+    const base = location.origin + location.pathname.replace(/[^/]*$/, '');
+    document.getElementById('shortcutUrlText').textContent = `${base}?code=${code}&text=`;
+    card.classList.remove('hidden');
+  }
+
+  document.getElementById('copyShortcutUrlBtn').addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(document.getElementById('shortcutUrlText').textContent);
+      toast('已複製，貼進捷徑的「文字」動作裡');
+    } catch (e) {
+      toast('複製失敗，請長按上面那串手動複製');
+    }
+  });
+
   // 打滿 6 碼就自動存起來，不用再按一顆「儲存」——那顆按鈕除了多一個步驟
   // 之外沒有任何作用，使用者還會誤以為它是「複製」
   codeInput.addEventListener('input', () => {
@@ -2447,6 +2524,7 @@ const SYNC_CODE_PATTERN = new RegExp('^[' + PAIR_CODE_ALPHABET + ']{6}$');
     settings.syncCode = code;
     saveSettings(settings);
     statusEl.textContent = '同步碼已設定，按「立即同步」開始';
+    renderShortcutUrl();
   });
 
   copyCodeBtn.addEventListener('click', async () => {
@@ -2471,18 +2549,22 @@ const SYNC_CODE_PATTERN = new RegExp('^[' + PAIR_CODE_ALPHABET + ']{6}$');
     settings.syncCode = code;
     saveSettings(settings);
     renderSyncState();
+    renderShortcutUrl();
     toast('已產生同步碼，按「複製」傳到另一台');
   });
 
-  syncBtn.addEventListener('click', async () => {
+  // silent = 自動同步（背景跑，不出 toast、失敗不打擾），非 silent = 使用者親手按的
+  performCardSync = async function ({ silent = false } = {}) {
     const code = loadSyncCode();
     if (!code) {
-      toast('請先設定或產生同步碼');
+      if (!silent) toast('請先設定或產生同步碼');
       return;
     }
 
-    syncBtn.disabled = true;
-    statusEl.textContent = '同步中…';
+    if (!silent) {
+      syncBtn.disabled = true;
+      statusEl.textContent = '同步中…';
+    }
     try {
       const beforeCount = CARDS.length;
 
@@ -2509,18 +2591,33 @@ const SYNC_CODE_PATTERN = new RegExp('^[' + PAIR_CODE_ALPHABET + ']{6}$');
       settings.lastSyncedAt = new Date().toISOString();
       saveSettings(settings);
       renderSyncState();
+      renderDashboard();
 
       const added = CARDS.length - beforeCount;
-      toast(added > 0 ? `同步完成，收到 ${added} 張新字卡` : '同步完成，資料已是最新');
+      // 自動同步只在真的收到新卡片時才吭聲，沒事就完全安靜
+      if (!silent) {
+        toast(added > 0 ? `同步完成，收到 ${added} 張新字卡` : '同步完成，資料已是最新');
+      } else if (added > 0) {
+        toast(`已收到 ${added} 張在瀏覽器建的字卡`);
+      }
     } catch (e) {
-      statusEl.textContent = '同步失敗，請確認網路連線後再試一次';
-      toast('同步失敗');
+      // 自動同步失敗多半是暫時沒網路，下次進 App 會再試一次，不需要跳警告嚇人
+      if (!silent) {
+        statusEl.textContent = '同步失敗，請確認網路連線後再試一次';
+        toast('同步失敗');
+      }
     } finally {
-      syncBtn.disabled = false;
+      if (!silent) syncBtn.disabled = false;
     }
-  });
+  };
 
-  renderSyncState();
+  syncBtn.addEventListener('click', () => performCardSync());
+
+  refreshSyncUi = function () {
+    renderSyncState();
+    renderShortcutUrl();
+  };
+  refreshSyncUi();
 })();
 
 // 註：原本這裡有一顆單獨要求通知權限的按鈕，用來點亮 App 圖示上的數字角標。
@@ -3376,6 +3473,7 @@ window.addEventListener('message', (e) => {
 async function init() {
   loadEcdict(); // 非阻塞載入，查詢時才需要，不擋畫面顯示
   parseUrlText();
+  if (refreshSyncUi) refreshSyncUi(); // 網址可能帶了同步碼進來，重畫一次同步區塊
   renderDashboard();
   checkDueOnVisible();
   populateVoiceList(); // 部分瀏覽器語音清單同步就緒，先嘗試填一次
