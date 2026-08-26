@@ -225,7 +225,10 @@
       </div>
 
       <div class="flip-card">
+        <!-- 前後鄰句：同一次採集裡緊鄰的句子，用來回想「這段在講什麼」。全是英文，不洩答案 -->
+        <p id="contextBefore" class="hidden text-sm leading-7 font-serif text-muted break-words mb-2"></p>
         <p id="clozeSentence" class="text-xl leading-9 font-serif text-paper break-words whitespace-normal"></p>
+        <p id="contextAfter" class="hidden text-sm leading-7 font-serif text-muted break-words mt-2"></p>
         <div class="flex flex-wrap gap-2 mt-4">
           <button id="speakBtn" class="btn-quiet text-sm px-3 py-2 rounded-lg flex items-center gap-2">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4V5Z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/></svg>
@@ -235,7 +238,12 @@
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5v14l9-7-9-7Z"/><path d="M15 5v14l5-7-5-7Z"/></svg>
             等一下再說
           </button>
+          <button id="hintZhBtn" class="btn-quiet text-sm px-3 py-2 rounded-lg flex items-center gap-2">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17h.01"/><path d="M9.1 9a3 3 0 1 1 4.2 2.7c-.8.4-1.3 1.2-1.3 2.1"/><circle cx="12" cy="12" r="10"/></svg>
+            看中文
+          </button>
         </div>
+        <p id="hintZhText" class="hidden text-sm text-muted leading-relaxed mt-2 pt-2 border-t border-hair"></p>
 
         <!-- 第一階段：四選一（reps 0–1，新卡或剛答錯被打回的卡） -->
         <div id="choiceAnswerArea" class="hidden mt-4 space-y-2">
@@ -289,6 +297,7 @@
           </div>
 
           <p class="text-xs text-muted">這張卡片你記得多熟？</p>
+          <p id="hintScoreNote" class="hidden text-xs text-amber2">這次看過中文提示，最高只能給 3 分。</p>
           <div class="grid grid-cols-5 gap-2">
             <button data-score="1" class="score-btn bg-red-500/80 hover:bg-red-500 py-2 rounded-lg text-white flex flex-col items-center leading-tight">
               <span class="text-sm font-bold">1</span><span class="text-[10px]">忘記了</span>
@@ -1800,6 +1809,84 @@ function renderClozeText(card) {
   return card.sentence + ' <span class="cloze-blank">______</span>';
 }
 
+// 鄰句裡若剛好也出現本卡的答案，一併挖空，不然等於送分
+function maskWordIn(text, word) {
+  const safe = escapeHtml(text || '');
+  const escaped = String(word || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  if (!escaped) return safe;
+  return safe.replace(new RegExp(`\\b${escaped}\\b`, 'gi'), '______');
+}
+
+// 找出同一次採集裡緊鄰的前後句，讓複習時看得出「這段在講什麼」。
+// batchId 是「當天」而不是「當篇」（見 dailyLookupBatchId），所以額外加建立時間門檻，
+// 避免同一天讀兩篇文章時把不相干的句子湊成上下文。legacy 是舊資料大雜燴，不撈。
+const NEIGHBOR_WINDOW_MS = 60 * 60 * 1000;
+
+function getContextNeighbors(card) {
+  const empty = { before: '', after: '' };
+  if (!card || !card.batchId || card.batchId === 'legacy') return empty;
+  const mates = CARDS
+    .filter((c) => c.batchId === card.batchId && c.sentence)
+    .sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
+  const idx = mates.findIndex((c) => c.id === card.id);
+  if (idx < 0) return empty;
+
+  const t = Date.parse(card.createdAt);
+  const pick = (mate) => {
+    if (!mate) return '';
+    const dt = Date.parse(mate.createdAt);
+    if (Number.isFinite(t) && Number.isFinite(dt) && Math.abs(dt - t) > NEIGHBOR_WINDOW_MS) return '';
+    if (mate.sentence === card.sentence) return '';
+    return maskWordIn(mate.sentence, card.word);
+  };
+  return { before: pick(mates[idx - 1]), after: pick(mates[idx + 1]) };
+}
+
+function renderContextNeighbors(card) {
+  const { before, after } = getContextNeighbors(card);
+  const beforeEl = document.getElementById('contextBefore');
+  const afterEl = document.getElementById('contextAfter');
+  beforeEl.innerHTML = before;
+  beforeEl.classList.toggle('hidden', !before);
+  afterEl.innerHTML = after;
+  afterEl.classList.toggle('hidden', !after);
+}
+
+// 中文提示：作答前看得到整句翻譯，但看了就把這次自評上限壓到 3
+// （靠提示才想起來，最多只能算「想了一下」），間隔才不會被灌水。
+const HINT_MAX_QUALITY = 3;
+let usedZhHint = false;
+
+function applyHintScoreLimit() {
+  document.querySelectorAll('.score-btn').forEach((btn) => {
+    const locked = usedZhHint && Number(btn.dataset.score) > HINT_MAX_QUALITY;
+    btn.disabled = locked;
+    btn.classList.toggle('opacity-30', locked);
+    btn.classList.toggle('cursor-not-allowed', locked);
+    btn.title = locked ? '看過中文提示，這次最高只能給 3 分' : '';
+  });
+  document.getElementById('hintScoreNote').classList.toggle('hidden', !usedZhHint);
+}
+
+function resetZhHint() {
+  usedZhHint = false;
+  document.getElementById('hintZhBtn').classList.remove('hidden');
+  const textEl = document.getElementById('hintZhText');
+  textEl.classList.add('hidden');
+  textEl.textContent = '';
+  applyHintScoreLimit();
+}
+
+document.getElementById('hintZhBtn').addEventListener('click', () => {
+  if (!currentReviewCard) return;
+  const textEl = document.getElementById('hintZhText');
+  textEl.textContent = currentReviewCard.sentenceZh || '（這張卡沒有存語境句翻譯）';
+  textEl.classList.remove('hidden');
+  document.getElementById('hintZhBtn').classList.add('hidden');
+  usedZhHint = true;
+  applyHintScoreLimit();
+});
+
 // 作答前朗讀語境句時，把目標單字換成停頓，避免「播放語音」變成選擇題的送分題；
 // 換成刪節號讓大部分 TTS 引擎唸出一個短暫停頓，聽感接近「這裡有個空格」
 function buildMutedSentence(card) {
@@ -1942,6 +2029,8 @@ function showNextReviewCard() {
   currentReviewCard = reviewQueue[0];
   document.getElementById('reviewRemaining').textContent = reviewQueue.length;
   document.getElementById('clozeSentence').innerHTML = renderClozeText(currentReviewCard);
+  renderContextNeighbors(currentReviewCard);
+  resetZhHint();
 
   // 依熟練度切換測驗方式；選擇題湊不出誘答選項時退回打字
   const options = getReviewStage(currentReviewCard) === 'choice'
@@ -1997,6 +2086,9 @@ function revealAnswer(isCorrect) {
   document.getElementById('revealMeaning').textContent = currentReviewCard.zhDefinition || '（無翻譯記錄）';
   document.getElementById('revealSentenceZh').textContent = currentReviewCard.sentenceZh || '';
   document.getElementById('revealArea').classList.remove('hidden');
+  document.getElementById('hintZhBtn').classList.add('hidden');
+  document.getElementById('hintZhText').classList.add('hidden');
+  applyHintScoreLimit();
   document.getElementById('typeAnswerArea').classList.add('hidden');
   document.getElementById('choiceAnswerArea').classList.add('hidden');
 
@@ -2086,7 +2178,7 @@ let lastScoreUndo = null;
 document.querySelectorAll('.score-btn').forEach((btn) => {
   btn.addEventListener('click', () => {
     if (!currentReviewCard) return;
-    const quality = Number(btn.dataset.score);
+    const quality = usedZhHint ? Math.min(Number(btn.dataset.score), HINT_MAX_QUALITY) : Number(btn.dataset.score);
     const card = currentReviewCard;
     lastScoreUndo = {
       card,
